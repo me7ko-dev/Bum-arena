@@ -1,4 +1,4 @@
-import type { AbilityId } from './types';
+import type { AbilityId, EndReason } from './types';
 
 /**
  * Събития, които симулацията изпраща навън за всеки тик.
@@ -43,6 +43,19 @@ export type GameEvent =
       x: number;
       y: number;
     }
+  | {
+      /** Отброяване: 3, 2, 1, после 0 = старт. */
+      type: 'countdown';
+      n: number;
+    }
+  | {
+      /** Арената ще се свие след inSec секунди. */
+      type: 'arenaWarning';
+      inSec: number;
+      toRadius: number;
+    }
+  | { type: 'arenaShrink'; toRadius: number }
+  | { type: 'roundEnd'; winnerId: number; reason: EndReason }
   | {
       type: 'fall';
       playerId: number;

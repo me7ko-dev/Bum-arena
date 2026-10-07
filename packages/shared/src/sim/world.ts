@@ -2,16 +2,20 @@ import { BALANCE, type Balance } from '../config/balance';
 import { NO_INPUT, sanitizeInput, type PlayerInput } from '../input';
 import { Rng } from '../math/rng';
 import { currentMass, handleAbilityInput, keepsMomentum, updateAbilities } from './abilities';
+import { updateArena } from './arena';
 import { CoinSystem } from './coins';
 import { resolvePlayerCollisions } from './collisions';
 import type { GameEvent } from './events';
 import { applyMovement } from './movement';
-import type { Arena, Coin, Player } from './types';
+import { checkRoundEnd } from './round';
+import type { Arena, Coin, Player, RoundState } from './types';
 
 export interface WorldOptions {
   seed?: number;
   /** Конфиг за баланса. Подава се по референция – промени в него (панела) важат веднага. */
   cfg?: Balance;
+  /** Започни направо с игра, без отброяване (тестове, тренировка). */
+  skipCountdown?: boolean;
 }
 
 export interface AddPlayerOptions {
@@ -34,6 +38,7 @@ export class World {
   readonly arena: Arena;
   readonly players: Player[] = [];
   readonly coinSystem: CoinSystem;
+  readonly round: RoundState;
   /** Събитията от последния step(). Изчистват се в началото на всеки тик. */
   readonly events: GameEvent[] = [];
 
@@ -44,7 +49,16 @@ export class World {
   constructor(opts: WorldOptions = {}) {
     this.cfg = opts.cfg ?? BALANCE;
     this.rng = new Rng(opts.seed ?? 1);
-    this.arena = { x: 0, y: 0, radius: this.cfg.arena.startRadius };
+    const r0 = this.cfg.arena.startRadius;
+    this.arena = { x: 0, y: 0, radius: r0, nextRadius: r0, shrinkIn: -1, shrinking: false };
+    this.round = {
+      phase: opts.skipCountdown ? 'playing' : 'countdown',
+      phaseTicks: 0,
+      phaseTime: 0,
+      timeLeft: this.cfg.round.duration,
+      winnerId: -1,
+      endReason: null,
+    };
     this.coinSystem = new CoinSystem(this);
     this.coinSystem.spawnInitial();
   }
@@ -141,14 +155,46 @@ export class World {
       this.checkFalls();
     }
 
-    this.coinSystem.update(this.dt, true);
+    this.coinSystem.update(this.dt, this.round.phase === 'playing');
     this.updateTimers(this.dt);
+    this.updateRound();
     this.tick++;
   }
 
-  /** Може ли играчът да управлява (жив и не е замаян). */
+  /** Фази на рунда: отброяване → игра → край. */
+  private updateRound(): void {
+    const r = this.round;
+    const rate = this.cfg.sim.tickRate;
+    const prev = r.phaseTime;
+    r.phaseTicks++;
+    r.phaseTime = r.phaseTicks / rate;
+
+    if (r.phase === 'countdown') {
+      const totalTicks = Math.round(this.cfg.round.countdown * rate);
+      // В началото на всяка цяла оставаща секунда: събитие 3, 2, 1.
+      const remainingBefore = totalTicks - (r.phaseTicks - 1);
+      if (remainingBefore > 0 && remainingBefore % rate === 0) {
+        this.events.push({ type: 'countdown', n: remainingBefore / rate });
+      }
+      if (r.phaseTicks >= totalTicks) {
+        r.phase = 'playing';
+        r.phaseTicks = 0;
+        r.phaseTime = 0;
+        this.events.push({ type: 'countdown', n: 0 });
+      }
+      return;
+    }
+
+    if (r.phase === 'playing') {
+      r.timeLeft = Math.max(0, this.cfg.round.duration - r.phaseTime);
+      updateArena(this, r.phaseTime, prev);
+      checkRoundEnd(this);
+    }
+  }
+
+  /** Може ли играчът да управлява (жив, не е замаян и рундът не е в отброяване). */
   canControl(p: Player): boolean {
-    return p.alive && p.stun <= 0;
+    return p.alive && p.stun <= 0 && this.round.phase !== 'countdown';
   }
 
   /** Таймери на играчите (замайване, суперсили, анимация на падане). */
@@ -160,15 +206,28 @@ export class World {
     }
   }
 
-  /** Който е с център извън арената – пада и е елиминиран. */
+  /**
+   * Който е с център извън арената – пада и е елиминиран.
+   * Извън активната игра (отброяване, край) ръбът е стена – никой не пада.
+   */
   private checkFalls(): void {
     const a = this.arena;
+    const playing = this.round.phase === 'playing';
     for (const p of this.players) {
       if (!p.alive) continue;
       const dx = p.x - a.x;
       const dy = p.y - a.y;
-      if (dx * dx + dy * dy <= a.radius * a.radius) continue;
-      this.eliminate(p);
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= a.radius * a.radius) continue;
+      if (playing) {
+        this.eliminate(p);
+      } else {
+        const d = Math.sqrt(d2);
+        p.x = a.x + (dx / d) * a.radius;
+        p.y = a.y + (dy / d) * a.radius;
+        p.vx *= -0.3;
+        p.vy *= -0.3;
+      }
     }
   }
 

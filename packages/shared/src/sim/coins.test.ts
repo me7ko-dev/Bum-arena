@@ -6,12 +6,12 @@ function emptyWorld() {
   const cfg = cloneBalance();
   cfg.coins.startCount = 0;
   cfg.coins.spawnInterval = 1e9; // без автоматично появяване
-  return new World({ cfg, seed: 5 });
+  return new World({ cfg, seed: 5, skipCountdown: true });
 }
 
 describe('Монети', () => {
   it('рундът започва с монети на картата', () => {
-    const w = new World({ cfg: cloneBalance() });
+    const w = new World({ cfg: cloneBalance(), skipCountdown: true });
     expect(w.coins.length).toBe(w.cfg.coins.startCount);
     for (const c of w.coins) expect(Math.hypot(c.x, c.y)).toBeLessThanOrEqual(w.arena.radius);
   });

@@ -5,7 +5,7 @@ import type { PlayerInput } from '../input';
 
 /** Слага двама играчи на линия: a вляво, b вдясно. */
 function setup() {
-  const w = new World({ cfg: cloneBalance(), seed: 3 });
+  const w = new World({ cfg: cloneBalance(), seed: 3, skipCountdown: true });
   const a = w.addPlayer({ name: 'A' });
   const b = w.addPlayer({ name: 'B' });
   a.x = a.prevX = -100;

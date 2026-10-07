@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BALANCE } from '@bum/shared';
+import { BALANCE, standings, type GameEvent, type Player } from '@bum/shared';
 import { sfx } from '../audio/Sfx';
 import { LocalGame } from '../game/LocalGame';
 import { KeyboardInput } from '../input/KeyboardInput';
@@ -28,6 +28,10 @@ export class GameScene extends Phaser.Scene {
   private zoomPunch = 0;
   /** Собствено измерване на времето между кадрите (Phaser изглажда delta-та). */
   private lastFrameMs = 0;
+  /** Събитията от този кадър (HUD-ът също ги чете). */
+  frameEvents: GameEvent[] = [];
+  /** Кого следи камерата, след като си паднал (-1 = теб). */
+  spectateId = -1;
 
   constructor() {
     super('Game');
@@ -36,6 +40,8 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.playerViews.clear();
     this.lastFrameMs = 0;
+    this.frameEvents = [];
+    this.spectateId = -1;
     this.match = new LocalGame({
       cfg: BALANCE,
       seed: Date.now() >>> 0,
@@ -85,8 +91,39 @@ export class GameScene extends Phaser.Scene {
     const unlock = () => sfx.unlock();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, unlock);
     this.input.keyboard?.on('keydown', unlock);
-    this.input.keyboard?.on('keydown-R', () => this.scene.restart());
+    this.input.keyboard?.on('keydown-R', () => this.restartRound());
     this.input.keyboard?.on('keydown-M', () => (sfx.muted = !sfx.muted));
+  }
+
+  /** Нов рунд веднага. */
+  restartRound(): void {
+    this.scene.restart();
+  }
+
+  /** Играчът, когото гледаме (ние или наблюдаваният след падане). */
+  get focusPlayer(): Player {
+    const w = this.match.world;
+    if (this.spectateId >= 0) return w.getPlayer(this.spectateId) ?? this.match.human;
+    return this.match.human;
+  }
+
+  /**
+   * След като си паднал, камерата следи този, който те е избутал,
+   * а ако и той падне – водещия (най-много избутвания) от живите.
+   */
+  private updateSpectate(): void {
+    const me = this.match.human;
+    if (me.alive) return;
+    const w = this.match.world;
+    const current = this.spectateId >= 0 ? w.getPlayer(this.spectateId) : undefined;
+    if (current?.alive) return;
+
+    let next: Player | undefined;
+    if (this.spectateId < 0 && me.lastHitBy >= 0) next = w.getPlayer(me.lastHitBy);
+    if (!next?.alive) next = standings(w).find((p) => p.alive);
+    if (!next) return;
+    this.spectateId = next.id;
+    this.cameras.main.startFollow(this.playerViews.get(next.id)!.container, false, 0.08, 0.08);
   }
 
   private updateZoom(): void {
@@ -99,15 +136,24 @@ export class GameScene extends Phaser.Scene {
     const dtSec = this.lastFrameMs ? Math.min((now - this.lastFrameMs) / 1000, 0.1) : 1 / 60;
     this.lastFrameMs = now;
     this.match.update(dtSec, this.keyboard.read());
-    this.effects.handle(this.match.drainEvents());
+    this.frameEvents = this.match.drainEvents();
+    this.effects.handle(this.frameEvents);
 
     const alpha = this.match.alpha;
     const cfg = this.match.world.cfg;
-    this.arenaView.update(this.match.world.arena);
+    this.arenaView.update(
+      this.match.world.arena,
+      dtSec,
+      cfg.arena.shrinkWarning,
+      this.match.world.round.phase === 'playing',
+    );
     this.coinsView.update(this.match.world.coins, alpha, dtSec);
     for (const p of this.match.world.players) {
       this.playerViews.get(p.id)?.update(p, alpha, dtSec, cfg);
     }
+
+    // Чакаме малко след падането, за да видиш как летиш, после камерата превключва.
+    if (!this.match.human.alive && this.match.human.fallTime > 1.2) this.updateSpectate();
 
     this.zoomPunch *= Math.exp(-dtSec * 12);
     this.cameras.main.setZoom(this.baseZoom * (1 + this.zoomPunch));

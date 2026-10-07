@@ -73,4 +73,26 @@ export interface Arena {
   x: number;
   y: number;
   radius: number;
+  /** Радиус след следващото свиване (= radius, ако няма предстоящо). */
+  nextRadius: number;
+  /** Секунди до началото на следващото свиване (-1 = няма повече). */
+  shrinkIn: number;
+  /** Свива ли се в момента. */
+  shrinking: boolean;
+}
+
+export type RoundPhase = 'countdown' | 'playing' | 'ended';
+export type EndReason = 'lastStanding' | 'timeUp';
+
+export interface RoundState {
+  phase: RoundPhase;
+  /** Тикове от началото на текущата фаза (цяло число – без грешки от закръгляне). */
+  phaseTicks: number;
+  /** Секунди от началото на текущата фаза (= phaseTicks / tickRate). */
+  phaseTime: number;
+  /** Оставащо време до края на рунда (сек), докато phase === 'playing'. */
+  timeLeft: number;
+  /** id на победителя (-1 докато няма). */
+  winnerId: number;
+  endReason: EndReason | null;
 }

@@ -5,7 +5,7 @@ import { World } from './world';
 describe('Дъш', () => {
   it('дава скорост в посоката на движение и минава на презареждане', () => {
     const cfg = cloneBalance();
-    const w = new World({ cfg });
+    const w = new World({ cfg, skipCountdown: true });
     const p = w.addPlayer({ name: 'A' });
     w.step(new Map([[p.id, { mx: 0, my: 1, ability: true }]]));
     expect(p.vy).toBeGreaterThan(cfg.abilities.dash.speed * 0.9);
@@ -15,7 +15,7 @@ describe('Дъш', () => {
 
   it('задържан бутон не повтаря дъша, а след презареждане може пак', () => {
     const cfg = cloneBalance();
-    const w = new World({ cfg });
+    const w = new World({ cfg, skipCountdown: true });
     const p = w.addPlayer({ name: 'A' });
     // В центъра и без посока – за да не изтича от арената по време на теста.
     p.x = p.prevX = 0;
@@ -34,7 +34,7 @@ describe('Дъш', () => {
   });
 
   it('замаян играч не може да дъшне', () => {
-    const w = new World({ cfg: cloneBalance() });
+    const w = new World({ cfg: cloneBalance(), skipCountdown: true });
     const p = w.addPlayer({ name: 'A' });
     p.stun = 1;
     w.step(new Map([[p.id, { mx: 1, my: 0, ability: true }]]));
@@ -43,7 +43,7 @@ describe('Дъш', () => {
 
   it('дъш удар е много по-силен от удар при ходене', () => {
     const push = (dash: boolean) => {
-      const w = new World({ cfg: cloneBalance() });
+      const w = new World({ cfg: cloneBalance(), skipCountdown: true });
       const a = w.addPlayer({ name: 'A' });
       const b = w.addPlayer({ name: 'B' });
       a.x = a.prevX = -150; a.y = a.prevY = 0; a.vx = 330;

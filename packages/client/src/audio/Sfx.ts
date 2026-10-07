@@ -130,6 +130,41 @@ export class Sfx {
     }
   }
 
+  /** Отброяване: 3, 2, 1 – кратко „бийп“; 0 – „старт“. */
+  countdown(n: number): void {
+    const o = this.out(0.45);
+    if (!o) return;
+    if (n > 0) this.tone(o, 'square', 660, 660, 0.12, 0.3);
+    else {
+      this.tone(o, 'square', 990, 990, 0.08, 0.3);
+      this.tone(o, 'square', 1320, 1320, 0.3, 0.3, 0.08);
+    }
+  }
+
+  /** Предупреждение, че арената ще се свие – „уи-у“. */
+  warning(): void {
+    const o = this.out(0.35);
+    if (!o) return;
+    this.tone(o, 'sawtooth', 440, 660, 0.25, 0.25);
+    this.tone(o, 'sawtooth', 660, 440, 0.25, 0.25, 0.25);
+  }
+
+  /** Победа – кратка фанфара. */
+  win(): void {
+    const o = this.out(0.5);
+    if (!o) return;
+    [523, 659, 784, 1047].forEach((f, i) => this.tone(o, 'square', f, f, 0.16, 0.3, i * 0.11));
+    this.tone(o, 'triangle', 1047, 1047, 0.6, 0.3, 0.44);
+  }
+
+  /** Загуба – тъжно „уа-уа“. */
+  lose(): void {
+    const o = this.out(0.4);
+    if (!o) return;
+    this.tone(o, 'triangle', 392, 370, 0.3, 0.4);
+    this.tone(o, 'triangle', 330, 262, 0.55, 0.4, 0.3);
+  }
+
   /** Суперсилата е презаредена – тихо „дзън“. */
   ready(): void {
     const o = this.out(0.18);
