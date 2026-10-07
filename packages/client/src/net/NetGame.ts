@@ -13,6 +13,7 @@ import {
   type InputMessage,
   type JoinOptions,
   type Player,
+  type PlayerInput,
   type RosterEntry,
   type RosterMessage,
   type Snapshot,
@@ -20,13 +21,11 @@ import {
 import type { InputSource, Match } from '../game/Match';
 import type { PlayerSettings } from '../game/settings';
 import { InputSender } from './InputSender';
-import { OwnPlayerSmoother } from './OwnPlayerSmoother';
+import { OwnPredictor } from './OwnPredictor';
 import { SnapshotBuffer } from './SnapshotBuffer';
 
 /** Пинг – на толкова секунди. */
 const PING_EVERY = 2;
-/** Собственото човече се екстраполира най-много толкова секунди напред. */
-const MAX_EXTRAPOLATION = 0.1;
 /** Колко чакаме свързването, преди да се откажем. */
 const CONNECT_TIMEOUT_MS = 10000;
 
@@ -93,7 +92,7 @@ export class NetGame implements Match {
   private readonly now: () => number;
   private readonly buffer: SnapshotBuffer;
   private readonly sender: InputSender;
-  private readonly own = new OwnPlayerSmoother();
+  private readonly own: OwnPredictor;
   private readonly spectator: Player;
   private _alpha = 1;
   private hasRoster = false;
@@ -114,6 +113,7 @@ export class NetGame implements Match {
     this.isPrivate = opts.isPrivate ?? false;
     this.buffer = new SnapshotBuffer(this.cfg.sim.tickRate);
     this.sender = new InputSender((msg) => this.room.send(MSG.input, msg));
+    this.own = new OwnPredictor(this.cfg);
 
     // Докато сървърът не каже кой играе – само ти, в лобито.
     const me: RosterEntry = {
@@ -182,6 +182,8 @@ export class NetGame implements Match {
       return;
     }
 
+    // Входът се чете ПРЕДИ изпращането (то „консумира“ натискането) – нужен е за предсказването.
+    const local = input.read();
     // Вход – само ако играеш в този рунд (в лобито светът стои).
     if (this.hasRoster && !this.waiting && this.humanId >= 0) this.sender.update(now, input);
     else input.consumeAbility();
@@ -194,7 +196,7 @@ export class NetGame implements Match {
     const frame = this.buffer.advance(now);
     if (frame) {
       this.applyFrame(frame.from, frame.to, frame.alpha);
-      this.updateOwn(now, frameSec);
+      this.updateOwn(frameSec, local);
       this.noFrameYet = false;
     }
 
@@ -290,21 +292,26 @@ export class NetGame implements Match {
     this._alpha = alpha;
   }
 
-  /** Собственото човече: последната снимка + екстраполация, без закъснението. */
-  private updateOwn(now: number, frameSec: number): void {
+  /** Собственото човече: предсказано локално и сверено със сървъра (OwnPredictor). */
+  private updateOwn(frameSec: number, input: PlayerInput): void {
     const me = this.world.getPlayer(this.humanId);
     const lp = this.latestWorld.getPlayer(this.humanId);
     const latest = this.buffer.latest;
     if (!me || !lp || !latest) return;
     const isNew = latest.t !== this.lastLatestTick;
     this.lastLatestTick = latest.t;
-    const ahead = Math.min(MAX_EXTRAPOLATION, Math.max(0, this.buffer.serverNow(now) - this.buffer.timeOf(latest)));
-    const pos = this.own.update(lp.x + lp.vx * ahead, lp.y + lp.vy * ahead, frameSec, isNew);
+    // В лобито/отброяването и след падане – без предсказване, както казва сървърът.
+    const playing = !this.waiting && this.world.round.phase === 'playing' && lp.alive;
+    if (!playing) {
+      this.own.reset();
+      return;
+    }
+    const pos = this.own.update(frameSec, input, lp, isNew, (this.ping || 80) / 1000);
     me.x = me.prevX = pos.x;
     me.y = me.prevY = pos.y;
-    me.vx = lp.vx;
-    me.vy = lp.vy;
-    me.facing = lp.facing;
+    me.vx = pos.vx;
+    me.vy = pos.vy;
+    me.facing = pos.facing;
   }
 }
 

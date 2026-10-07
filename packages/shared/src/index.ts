@@ -15,6 +15,7 @@ export * from './sim/abilities';
 export * from './sim/arena';
 export * from './sim/cars';
 export * from './sim/events';
+export * from './sim/movement';
 export * from './sim/round';
 export * from './sim/shop';
 export * from './sim/stats';
