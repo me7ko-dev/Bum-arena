@@ -27,8 +27,14 @@ export class PlayerView {
   private squashAmount = 0;
   /** Оставащо време на бялото премигване. */
   private flashLeft = 0;
+  /** Таймер за следата при дъш. */
+  private trailTimer = 0;
 
-  constructor(scene: Phaser.Scene, p: Player, isMe: boolean) {
+  constructor(
+    private scene: Phaser.Scene,
+    p: Player,
+    isMe: boolean,
+  ) {
     this.color = playerColor(p.colorIndex);
     this.shadow = scene.add.image(0, p.radius * 0.75, 'shadow');
     this.body = scene.add.image(0, 0, 'body').setTint(this.color);
@@ -111,6 +117,15 @@ export class PlayerView {
       if (this.flashLeft <= 0) this.body.setTint(this.color);
     }
 
+    // Следа („призраци“) по време на дъш.
+    if (p.abilityTime > 0 && p.ability === 'dash') {
+      this.trailTimer -= dtSec;
+      if (this.trailTimer <= 0) {
+        this.trailTimer = 0.025;
+        this.spawnGhost(x, y, s);
+      }
+    }
+
     // Звездички над главата при замайване.
     const stunned = p.stun > 0;
     this.starPhase += dtSec * 7;
@@ -121,6 +136,22 @@ export class PlayerView {
       const a = this.starPhase + (i * Math.PI * 2) / this.stars.length;
       star.setPosition(Math.cos(a) * p.radius * 0.8, -p.radius * 0.9 + Math.sin(a) * p.radius * 0.25);
     }
+  }
+
+  private spawnGhost(x: number, y: number, scale: number): void {
+    const ghost = this.scene.add
+      .image(x, y, 'body')
+      .setTint(this.color)
+      .setScale(scale)
+      .setAlpha(0.45)
+      .setDepth(y - 1);
+    this.scene.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      scale: scale * 0.7,
+      duration: 220,
+      onComplete: () => ghost.destroy(),
+    });
   }
 
   /** Падане: смаляване, избледняване и „зад“ платформата. */

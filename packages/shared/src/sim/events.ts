@@ -1,3 +1,5 @@
+import type { AbilityId } from './types';
+
 /**
  * Събития, които симулацията изпраща навън за всеки тик.
  *
@@ -16,6 +18,16 @@ export type GameEvent =
       y: number;
       /** Сила 0..1. */
       strength: number;
+    }
+  | {
+      type: 'ability';
+      playerId: number;
+      ability: AbilityId;
+      x: number;
+      y: number;
+      /** Посока (единичен вектор), ако суперсилата има такава. */
+      dirX: number;
+      dirY: number;
     }
   | {
       type: 'fall';

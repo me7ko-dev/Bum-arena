@@ -61,6 +61,9 @@ export class Effects {
         case 'fall':
           this.onFall(e);
           break;
+        case 'ability':
+          this.onAbility(e);
+          break;
       }
     }
   }
@@ -107,6 +110,18 @@ export class Effects {
     }
     if (meInvolved && s > 0.4) this.host.punchZoom(FEEL.zoomPunch * s);
     if (s > 0.75) this.popText(e.x, e.y - 40, t('boom'), '#ffd23f', 1 + s * 0.3);
+  }
+
+  private onAbility(e: Extract<GameEvent, { type: 'ability' }>): void {
+    const { vol, pan } = this.spatial(e.x, e.y);
+    const mine = e.playerId === this.host.humanId;
+    if (e.ability === 'dash') {
+      sfx.dash(mine ? 1 : vol, pan);
+      if (this.onScreen(e.x, e.y)) {
+        // Прах зад гърба.
+        this.dust.explode(8, e.x - e.dirX * 20, e.y - e.dirY * 20);
+      }
+    }
   }
 
   private onFall(e: Extract<GameEvent, { type: 'fall' }>): void {

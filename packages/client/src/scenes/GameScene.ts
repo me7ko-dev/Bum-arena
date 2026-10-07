@@ -69,6 +69,10 @@ export class GameScene extends Phaser.Scene {
 
     this.setupGlobalKeys();
 
+    // HUD върви като отделна сцена върху играта.
+    this.scene.stop('Hud');
+    this.scene.launch('Hud', { game: this });
+
     // В dev режим сцената е достъпна от конзолата: window.__bum.match.world …
     if (import.meta.env.DEV) (window as unknown as { __bum: GameScene }).__bum = this;
   }

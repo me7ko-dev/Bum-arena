@@ -4,6 +4,7 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
+import { HudScene } from './scenes/HudScene';
 import { COLORS } from './theme';
 import { getLang } from './i18n';
 
@@ -22,5 +23,5 @@ new Phaser.Game({
   render: { antialias: true, powerPreference: 'high-performance' },
   input: { activePointers: 3 }, // джойстик + бутон + резерва
   fps: { target: 60 },
-  scene: [BootScene, GameScene],
+  scene: [BootScene, GameScene, HudScene],
 });

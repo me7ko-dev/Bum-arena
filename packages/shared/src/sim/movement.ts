@@ -14,6 +14,7 @@ export function applyMovement(
   p: Player,
   input: PlayerInput,
   canControl: boolean,
+  keepMomentum: boolean,
   cfg: Balance,
   dt: number,
 ): void {
@@ -24,6 +25,13 @@ export function applyMovement(
   const mx = canControl ? input.mx : 0;
   const my = canControl ? input.my : 0;
   const inputLen = Math.sqrt(mx * mx + my * my);
+
+  if (keepMomentum) {
+    // Дъш и подобни: скоростта се пази, без управление.
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    return;
+  }
 
   if (inputLen > 0.1) p.facing = Math.atan2(my, mx);
 

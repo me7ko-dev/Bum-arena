@@ -1,6 +1,7 @@
 import { BALANCE, type Balance } from '../config/balance';
 import { NO_INPUT, sanitizeInput, type PlayerInput } from '../input';
 import { Rng } from '../math/rng';
+import { currentMass, handleAbilityInput, keepsMomentum, updateAbilities } from './abilities';
 import { resolvePlayerCollisions } from './collisions';
 import type { GameEvent } from './events';
 import { applyMovement } from './movement';
@@ -83,6 +84,10 @@ export class World {
       lastHitBy: -1,
       lastHitTick: -1,
       knockouts: 0,
+      ability: 'dash',
+      abilityCooldown: 0,
+      abilityTime: 0,
+      abilityHeld: false,
     };
     this.players.push(p);
     return p;
@@ -108,11 +113,19 @@ export class World {
       p.prevY = p.y;
     }
 
+    // Входът се чете веднъж на тик.
+    const tickInputs = new Map<number, PlayerInput>();
+    for (const p of this.players) {
+      const input = sanitizeInput(inputs.get(p.id) ?? NO_INPUT);
+      tickInputs.set(p.id, input);
+      handleAbilityInput(this, p, input, this.canControl(p));
+      p.mass = currentMass(this.cfg, p);
+    }
+
     for (let s = 0; s < substeps; s++) {
       for (const p of this.players) {
-        const input = sanitizeInput(inputs.get(p.id) ?? NO_INPUT);
-        const canControl = p.alive && p.stun <= 0;
-        applyMovement(p, input, canControl, this.cfg, dt);
+        const input = tickInputs.get(p.id) ?? NO_INPUT;
+        applyMovement(p, input, this.canControl(p), keepsMomentum(p), this.cfg, dt);
       }
       resolvePlayerCollisions(this);
       this.checkFalls();
@@ -122,10 +135,16 @@ export class World {
     this.tick++;
   }
 
-  /** Таймери на играчите (замайване, анимация на падане). */
+  /** Може ли играчът да управлява (жив и не е замаян). */
+  canControl(p: Player): boolean {
+    return p.alive && p.stun <= 0;
+  }
+
+  /** Таймери на играчите (замайване, суперсили, анимация на падане). */
   private updateTimers(dt: number): void {
     for (const p of this.players) {
       if (p.stun > 0) p.stun = Math.max(0, p.stun - dt);
+      updateAbilities(this, p, dt);
       if (!p.alive) p.fallTime += dt;
     }
   }
@@ -147,6 +166,7 @@ export class World {
     p.eliminatedTick = this.tick;
     p.fallTime = 0;
     p.stun = 0;
+    p.abilityTime = 0;
 
     // Кредит за избутване: ако някой го е ударил наскоро.
     let byId: number | null = null;

@@ -91,6 +91,33 @@ export class Sfx {
     if (strength > 0.6) this.tone(o, 'square', 90, 40, 0.18, 0.25);
   }
 
+  /** Дъш – „фшшт“. */
+  dash(volume: number, pan: number): void {
+    const o = this.out(volume * 0.55, pan);
+    if (!o || !this.noiseBuffer) return;
+    const src = o.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filter = o.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 2;
+    filter.frequency.setValueAtTime(500, o.t);
+    filter.frequency.exponentialRampToValueAtTime(3200, o.t + 0.2);
+    const g = o.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, o.t);
+    g.gain.exponentialRampToValueAtTime(0.9, o.t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, o.t + 0.25);
+    src.connect(filter).connect(g).connect(o.node);
+    src.start(o.t);
+    src.stop(o.t + 0.3);
+  }
+
+  /** Суперсилата е презаредена – тихо „дзън“. */
+  ready(): void {
+    const o = this.out(0.18);
+    if (!o) return;
+    this.tone(o, 'sine', 1320, 1320, 0.12, 0.5);
+  }
+
   /** Падане от ръба – спускащо се свирене. */
   fall(volume: number, pan: number): void {
     const o = this.out(volume * 0.5, pan);
