@@ -1,5 +1,7 @@
-/** Всички суперсили. В етап 1 има само 'dash'; останалите идват в етап 2. */
-export type AbilityId = 'dash';
+/** Всички суперсили. */
+export type AbilityId = 'dash' | 'magnet' | 'giant' | 'freeze' | 'shield';
+
+export const ABILITY_IDS: readonly AbilityId[] = ['dash', 'magnet', 'giant', 'freeze', 'shield'];
 
 /**
  * Типове на състоянието на света. Всичко тук е „чисти данни“ –

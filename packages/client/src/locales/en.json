@@ -21,5 +21,15 @@
   "reasonTimeUp": "Time's up – most knockouts",
   "spectating": "Spectating: {name}",
   "results": "Results",
-  "langToggle": "БГ"
+  "langToggle": "БГ",
+  "ability.dash": "Dash",
+  "ability.dash.desc": "A sudden leap forward – launches anyone in your way.",
+  "ability.magnet": "Magnet",
+  "ability.magnet.desc": "Pulls coins and opponents towards you.",
+  "ability.giant": "Giant",
+  "ability.giant.desc": "Become huge and heavy for 5 seconds.",
+  "ability.freeze": "Freeze",
+  "ability.freeze.desc": "Freezes everyone nearby for 2 seconds.",
+  "ability.shield": "Shield",
+  "ability.shield.desc": "Repels everything around you."
 }

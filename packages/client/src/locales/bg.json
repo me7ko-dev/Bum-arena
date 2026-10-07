@@ -21,5 +21,15 @@
   "reasonTimeUp": "Времето изтече – най-много избутвания",
   "spectating": "Гледаш: {name}",
   "results": "Класиране",
-  "langToggle": "EN"
+  "langToggle": "EN",
+  "ability.dash": "Дъш",
+  "ability.dash.desc": "Рязък скок напред – изстрелва всеки по пътя ти.",
+  "ability.magnet": "Магнит",
+  "ability.magnet.desc": "Дърпа монетите и противниците към теб.",
+  "ability.giant": "Гигант",
+  "ability.giant.desc": "Ставаш огромен и тежък за 5 секунди.",
+  "ability.freeze": "Замразяване",
+  "ability.freeze.desc": "Замразява всички наблизо за 2 секунди.",
+  "ability.shield": "Щит",
+  "ability.shield.desc": "Отблъсква всичко около теб."
 }

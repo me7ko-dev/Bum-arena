@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@bum/shared": "*",
-    "phaser": "^3.90.0",
-    "lil-gui": "^0.21.0"
+    "@fontsource/nunito": "^5.3.0",
+    "lil-gui": "^0.21.0",
+    "phaser": "^3.90.0"
   }
 }
