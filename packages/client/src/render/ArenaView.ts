@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import type { Arena } from '@bum/shared';
 import { COLORS } from '../theme';
 
