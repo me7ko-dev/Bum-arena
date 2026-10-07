@@ -1,11 +1,20 @@
-import { BOT_NAMES, World, type Balance, type GameEvent, type Player, type PlayerInput } from '@bum/shared';
+import {
+  BOT_NAMES,
+  BotBrain,
+  World,
+  pickDifficulty,
+  type Balance,
+  type GameEvent,
+  type Player,
+  type PlayerInput,
+} from '@bum/shared';
 
 export interface LocalGameOptions {
   cfg: Balance;
   seed: number;
   humanName: string;
-  /** Колко противника да има освен човека. */
-  opponents: number;
+  /** Колко бота да има освен човека. */
+  bots: number;
 }
 
 /**
@@ -19,6 +28,7 @@ export interface LocalGameOptions {
 export class LocalGame {
   readonly world: World;
   readonly humanId: number;
+  readonly bots: BotBrain[] = [];
   private accumulator = 0;
   /** Оставащо „замразяване“ (hit-stop) в секунди. */
   private freezeLeft = 0;
@@ -31,10 +41,13 @@ export class LocalGame {
   constructor(opts: LocalGameOptions) {
     this.world = new World({ cfg: opts.cfg, seed: opts.seed });
     this.humanId = this.world.addPlayer({ name: opts.humanName }).id;
+    // Ботове с различни имена и трудност. В етап 3 те ще запълват празните места в стаята.
     const names = [...BOT_NAMES];
-    for (let i = 0; i < opts.opponents; i++) {
+    for (let i = 0; i < opts.bots; i++) {
       const name = names.splice(this.world.rng.int(0, names.length - 1), 1)[0] ?? `Bot${i}`;
-      this.world.addPlayer({ name, isBot: true });
+      const p = this.world.addPlayer({ name, isBot: true });
+      const difficulty = pickDifficulty(opts.cfg, this.world.rng);
+      this.bots.push(new BotBrain(p.id, difficulty, (opts.seed ^ (p.id * 2654435761)) >>> 0));
     }
   }
 
@@ -63,6 +76,7 @@ export class LocalGame {
 
     while (this.accumulator >= dt) {
       const inputs = new Map<number, PlayerInput>([[this.humanId, humanInput]]);
+      for (const bot of this.bots) inputs.set(bot.playerId, bot.think(this.world));
       this.world.step(inputs);
       this.pendingEvents.push(...this.world.events);
       this.accumulator -= dt;

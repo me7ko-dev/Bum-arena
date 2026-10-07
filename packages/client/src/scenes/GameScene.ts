@@ -11,8 +11,8 @@ import { t } from '../i18n';
 
 /** Колко единици от света да се виждат по по-късата страна на екрана. */
 const VIEW_SIZE = 760;
-/** Брой противници в етап 1 (засега манекени без мозък – ботовете идват в стъпка 7). */
-const OPPONENTS = 9;
+/** Брой ботове в етап 1 (общо 12 с теб). */
+const BOTS = 11;
 
 /**
  * Основната сцена: свързва логиката (LocalGame) с рисуването, ефектите и входа.
@@ -20,7 +20,7 @@ const OPPONENTS = 9;
 export class GameScene extends Phaser.Scene {
   match!: LocalGame;
   private keyboard!: KeyboardInput;
-  private arenaView!: ArenaView;
+  arenaView!: ArenaView;
   private coinsView!: CoinsView;
   private effects!: Effects;
   private playerViews = new Map<number, PlayerView>();
@@ -46,10 +46,10 @@ export class GameScene extends Phaser.Scene {
       cfg: BALANCE,
       seed: Date.now() >>> 0,
       humanName: t('you'),
-      opponents: OPPONENTS,
+      bots: BOTS,
     });
     this.keyboard = new KeyboardInput(this);
-    this.arenaView = new ArenaView(this);
+    this.arenaView = new ArenaView(this, this.match.world.cfg.arena.startRadius);
     this.coinsView = new CoinsView(this, this.match.world.cfg.coins.radius);
 
     for (const p of this.match.world.players) {

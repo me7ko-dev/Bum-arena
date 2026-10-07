@@ -34,6 +34,7 @@ export interface AddPlayerOptions {
  */
 export class World {
   readonly cfg: Balance;
+  readonly seed: number;
   readonly rng: Rng;
   readonly arena: Arena;
   readonly players: Player[] = [];
@@ -45,10 +46,13 @@ export class World {
   /** Номер на текущия тик (расте с 1 на всеки step). */
   tick = 0;
   private nextId = 1;
+  private readonly spawnOffset: number;
 
   constructor(opts: WorldOptions = {}) {
     this.cfg = opts.cfg ?? BALANCE;
-    this.rng = new Rng(opts.seed ?? 1);
+    this.seed = (opts.seed ?? 1) >>> 0;
+    this.rng = new Rng(this.seed);
+    this.spawnOffset = this.rng.next() * Math.PI * 2;
     const r0 = this.cfg.arena.startRadius;
     this.arena = { x: 0, y: 0, radius: r0, nextRadius: r0, shrinkIn: -1, shrinking: false };
     this.round = {
@@ -81,11 +85,9 @@ export class World {
   addPlayer(opts: AddPlayerOptions): Player {
     const pc = this.cfg.player;
     const index = this.players.length;
-    // Разпределяме играчите в кръг около центъра.
-    const angle = index * 2.399963; // „златен ъгъл“ – равномерно без подреждане
-    const r = this.arena.radius * 0.55 * Math.sqrt((index + 1) / 12);
-    const x = Math.cos(angle) * r;
-    const y = Math.sin(angle) * r;
+    // Временна позиция – истинската се дава от layoutSpawns() (равномерен кръг).
+    const x = 0;
+    const y = 0;
     const p: Player = {
       id: this.nextId++,
       name: opts.name,
@@ -97,7 +99,7 @@ export class World {
       prevY: y,
       vx: 0,
       vy: 0,
-      facing: Math.atan2(-y, -x), // гледа към центъра
+      facing: 0,
       radius: pc.radius,
       mass: pc.mass,
       alive: true,
@@ -114,7 +116,25 @@ export class World {
       abilityHeld: false,
     };
     this.players.push(p);
+    this.layoutSpawns();
     return p;
+  }
+
+  /**
+   * Подрежда играчите равномерно в кръг около центъра, с лице към центъра.
+   * Честно за всички: еднакво далеч от ръба и един от друг.
+   */
+  private layoutSpawns(): void {
+    const n = this.players.length;
+    const r = this.arena.radius * this.cfg.arena.spawnRadiusFrac;
+    // Случайно завъртане на целия кръг, за да не започваш винаги на едно място.
+    const offset = this.spawnOffset;
+    this.players.forEach((p, i) => {
+      const a = offset + (i / n) * Math.PI * 2;
+      p.x = p.prevX = this.arena.x + Math.cos(a) * r;
+      p.y = p.prevY = this.arena.y + Math.sin(a) * r;
+      p.facing = a + Math.PI;
+    });
   }
 
   getPlayer(id: number): Player | undefined {

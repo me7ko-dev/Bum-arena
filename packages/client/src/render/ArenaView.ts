@@ -2,18 +2,27 @@ import type Phaser from 'phaser';
 import type { Arena } from '@bum/shared';
 import { COLORS } from '../theme';
 
+/** Размер на изпечената текстура на пода и радиусът на арената в нея. */
+const TEX_SIZE = 1024;
+const TEX_R = 470;
+const TEX_KEY = 'arenaFloor';
+
 /**
- * Рисува кръглата арена. Прерисува се само когато радиусът се промени.
+ * Рисува кръглата арена и опасната зона преди свиване.
  */
 export class ArenaView {
-  private floor: Phaser.GameObjects.Graphics;
-  /** Опасната зона (ще изчезне при свиването) – рисува се всеки кадър, докато има предупреждение. */
+  /**
+   * Подът е изпечен веднъж в текстура и само се мащабира при свиване.
+   * (Голяма Graphics фигура се преизчислява всеки кадър и тежи на телефон.)
+   */
+  readonly floor: Phaser.GameObjects.Image;
+  /** Опасната зона (ще изчезне при свиването) – рисува се само докато има предупреждение. */
   private danger: Phaser.GameObjects.Graphics;
-  private lastRadius = -1;
   private time = 0;
 
-  constructor(scene: Phaser.Scene) {
-    this.floor = scene.add.graphics().setDepth(-10);
+  constructor(scene: Phaser.Scene, startRadius: number) {
+    if (!scene.textures.exists(TEX_KEY)) bakeFloor(scene, startRadius);
+    this.floor = scene.add.image(0, 0, TEX_KEY).setDepth(-10);
     this.danger = scene.add.graphics().setDepth(-9);
   }
 
@@ -23,10 +32,7 @@ export class ArenaView {
    */
   update(arena: Arena, dtSec: number, warnSeconds: number, active: boolean): void {
     this.time += dtSec;
-    if (Math.abs(arena.radius - this.lastRadius) >= 0.5) {
-      this.lastRadius = arena.radius;
-      this.draw(arena);
-    }
+    this.floor.setPosition(arena.x, arena.y).setScale(arena.radius / TEX_R);
     if (active) this.drawDanger(arena, warnSeconds);
     else this.danger.clear();
   }
@@ -57,24 +63,31 @@ export class ArenaView {
     g.strokeCircle(arena.x, arena.y, arena.nextRadius);
   }
 
-  private draw(arena: Arena): void {
-    const g = this.floor;
-    const r = arena.radius;
-    g.clear();
-    // „Сянка“ под ръба – създава усещане за платформа над пропаст.
-    g.fillStyle(0x000000, 0.35);
-    g.fillCircle(arena.x, arena.y + 26, r + 6);
-    // Ръб (страничната стена на платформата).
-    g.fillStyle(COLORS.arenaRim, 1);
-    g.fillCircle(arena.x, arena.y + 14, r);
-    // Под.
-    g.fillStyle(COLORS.arenaFloor, 1);
-    g.fillCircle(arena.x, arena.y, r);
-    // Концентрични пръстени за ориентация и усещане за скорост.
-    g.lineStyle(10, COLORS.arenaFloorAlt, 1);
-    for (let rr = 150; rr < r - 30; rr += 150) g.strokeCircle(arena.x, arena.y, rr);
-    // Светъл ръб.
-    g.lineStyle(10, COLORS.arenaEdge, 1);
-    g.strokeCircle(arena.x, arena.y, r - 5);
-  }
+}
+
+/**
+ * Рисува пода на арената в текстура (веднъж за цялата игра).
+ * Детайлите са в „единици на света“ при начален радиус и се мащабират до TEX_R.
+ */
+function bakeFloor(scene: Phaser.Scene, startRadius: number): void {
+  const k = TEX_R / startRadius; // свят → текстура
+  const c = TEX_SIZE / 2;
+  const g = scene.add.graphics();
+  // „Сянка“ под ръба – платформа над пропаст.
+  g.fillStyle(0x000000, 0.35);
+  g.fillCircle(c, c + 26 * k, TEX_R + 6 * k);
+  // Ръб (страничната стена на платформата).
+  g.fillStyle(COLORS.arenaRim, 1);
+  g.fillCircle(c, c + 14 * k, TEX_R);
+  // Под.
+  g.fillStyle(COLORS.arenaFloor, 1);
+  g.fillCircle(c, c, TEX_R);
+  // Концентрични пръстени за ориентация и усещане за скорост.
+  g.lineStyle(10 * k, COLORS.arenaFloorAlt, 1);
+  for (let rr = 150; rr < startRadius - 30; rr += 150) g.strokeCircle(c, c, rr * k);
+  // Светъл ръб.
+  g.lineStyle(10 * k, COLORS.arenaEdge, 1);
+  g.strokeCircle(c, c, TEX_R - 5 * k);
+  g.generateTexture(TEX_KEY, TEX_SIZE, TEX_SIZE);
+  g.destroy();
 }

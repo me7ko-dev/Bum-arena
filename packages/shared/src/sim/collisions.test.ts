@@ -20,14 +20,20 @@ describe('Сблъсъци', () => {
     const { w, a, b } = setup();
     a.vx = 600;
     const events = [];
+    let maxVx = 0;
+    let maxStun = 0;
     for (let i = 0; i < 10; i++) {
       w.step(new Map<number, PlayerInput>());
       events.push(...w.events);
+      maxVx = Math.max(maxVx, b.vx);
+      maxStun = Math.max(maxStun, b.stun);
     }
     const hit = events.find((e) => e.type === 'hit');
     expect(hit).toBeDefined();
     expect(hit && hit.type === 'hit' && hit.attackerId).toBe(a.id);
-    expect(b.vx).toBeGreaterThan(300);
+    // Удареният полита по-бързо от максималната скорост при ходене.
+    expect(maxVx).toBeGreaterThan(w.cfg.player.maxSpeed);
+    expect(maxStun).toBeGreaterThan(0);
     expect(b.lastHitBy).toBe(a.id);
   });
 

@@ -6,6 +6,7 @@ export const GAME_VERSION = '0.1.0';
 
 export * from './config/balance';
 export * from './input';
+export * from './bots/BotBrain';
 export * from './bots/names';
 export * from './math/rng';
 export * from './math/vec';
