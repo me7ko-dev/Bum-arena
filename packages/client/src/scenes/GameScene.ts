@@ -4,6 +4,7 @@ import { sfx } from '../audio/Sfx';
 import { LocalGame } from '../game/LocalGame';
 import { KeyboardInput } from '../input/KeyboardInput';
 import { ArenaView } from '../render/ArenaView';
+import { CoinsView } from '../render/CoinsView';
 import { Effects } from '../render/Effects';
 import { PlayerView } from '../render/PlayerView';
 import { t } from '../i18n';
@@ -20,6 +21,7 @@ export class GameScene extends Phaser.Scene {
   match!: LocalGame;
   private keyboard!: KeyboardInput;
   private arenaView!: ArenaView;
+  private coinsView!: CoinsView;
   private effects!: Effects;
   private playerViews = new Map<number, PlayerView>();
   private baseZoom = 1;
@@ -42,6 +44,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.keyboard = new KeyboardInput(this);
     this.arenaView = new ArenaView(this);
+    this.coinsView = new CoinsView(this, this.match.world.cfg.coins.radius);
 
     for (const p of this.match.world.players) {
       this.playerViews.set(p.id, new PlayerView(this, p, p.id === this.match.humanId));
@@ -101,6 +104,7 @@ export class GameScene extends Phaser.Scene {
     const alpha = this.match.alpha;
     const cfg = this.match.world.cfg;
     this.arenaView.update(this.match.world.arena);
+    this.coinsView.update(this.match.world.coins, alpha, dtSec);
     for (const p of this.match.world.players) {
       this.playerViews.get(p.id)?.update(p, alpha, dtSec, cfg);
     }

@@ -2,10 +2,11 @@ import { BALANCE, type Balance } from '../config/balance';
 import { NO_INPUT, sanitizeInput, type PlayerInput } from '../input';
 import { Rng } from '../math/rng';
 import { currentMass, handleAbilityInput, keepsMomentum, updateAbilities } from './abilities';
+import { CoinSystem } from './coins';
 import { resolvePlayerCollisions } from './collisions';
 import type { GameEvent } from './events';
 import { applyMovement } from './movement';
-import type { Arena, Player } from './types';
+import type { Arena, Coin, Player } from './types';
 
 export interface WorldOptions {
   seed?: number;
@@ -32,6 +33,7 @@ export class World {
   readonly rng: Rng;
   readonly arena: Arena;
   readonly players: Player[] = [];
+  readonly coinSystem: CoinSystem;
   /** Събитията от последния step(). Изчистват се в началото на всеки тик. */
   readonly events: GameEvent[] = [];
 
@@ -43,6 +45,13 @@ export class World {
     this.cfg = opts.cfg ?? BALANCE;
     this.rng = new Rng(opts.seed ?? 1);
     this.arena = { x: 0, y: 0, radius: this.cfg.arena.startRadius };
+    this.coinSystem = new CoinSystem(this);
+    this.coinSystem.spawnInitial();
+  }
+
+  /** Монетите на картата. */
+  get coins(): readonly Coin[] {
+    return this.coinSystem.coins;
   }
 
   /** Продължителност на един тик в секунди. */
@@ -84,6 +93,7 @@ export class World {
       lastHitBy: -1,
       lastHitTick: -1,
       knockouts: 0,
+      coins: 0,
       ability: 'dash',
       abilityCooldown: 0,
       abilityTime: 0,
@@ -131,6 +141,7 @@ export class World {
       this.checkFalls();
     }
 
+    this.coinSystem.update(this.dt, true);
     this.updateTimers(this.dt);
     this.tick++;
   }
@@ -179,5 +190,14 @@ export class World {
       }
     }
     this.events.push({ type: 'fall', playerId: p.id, byId, x: p.x, y: p.y });
+
+    // Всичките му монети се пръскат обратно в арената (близо до ръба, към центъра).
+    if (p.coins > 0) {
+      const d = Math.hypot(p.x - this.arena.x, p.y - this.arena.y) || 1;
+      const nx = (p.x - this.arena.x) / d;
+      const ny = (p.y - this.arena.y) / d;
+      const r = this.arena.radius * 0.88;
+      this.coinSystem.scatter(p, p.coins, this.arena.x + nx * r, this.arena.y + ny * r, -nx * 0.6, -ny * 0.6);
+    }
   }
 }

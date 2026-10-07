@@ -41,6 +41,8 @@ export interface Player {
   lastHitTick: number;
   /** Брой избутани противници. */
   knockouts: number;
+  /** Монети в рунда. */
+  coins: number;
 
   // ── Суперсила ──
   ability: AbilityId;
@@ -50,6 +52,20 @@ export interface Player {
   abilityTime: number;
   /** Беше ли задържан бутонът миналия тик (за да хващаме само натискането). */
   abilityHeld: boolean;
+}
+
+export interface Coin {
+  readonly id: number;
+  x: number;
+  y: number;
+  prevX: number;
+  prevY: number;
+  vx: number;
+  vy: number;
+  /** Колко монети струва (разпилените могат да са > 1). */
+  value: number;
+  /** Секунди, преди да може да се вземе. */
+  pickupDelay: number;
 }
 
 export interface Arena {

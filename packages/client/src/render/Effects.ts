@@ -26,6 +26,10 @@ export interface EffectsHost {
 export class Effects {
   private sparks: Phaser.GameObjects.Particles.ParticleEmitter;
   private dust: Phaser.GameObjects.Particles.ParticleEmitter;
+  private glints: Phaser.GameObjects.Particles.ParticleEmitter;
+  /** Серия бързо взети монети → по-висок звук (приятно „натрупване“). */
+  private coinStreak = 0;
+  private lastCoinTime = 0;
 
   constructor(private host: EffectsHost) {
     const scene = host.scene;
@@ -50,6 +54,16 @@ export class Effects {
         emitting: false,
       })
       .setDepth(-5);
+    this.glints = scene.add
+      .particles(0, 0, 'dot', {
+        lifespan: { min: 200, max: 380 },
+        speed: { min: 60, max: 180 },
+        scale: { start: 0.3, end: 0 },
+        tint: [0xffd23f, 0xfff3b0, 0xffffff],
+        blendMode: Phaser.BlendModes.ADD,
+        emitting: false,
+      })
+      .setDepth(20000);
   }
 
   handle(events: readonly GameEvent[]): void {
@@ -63,6 +77,12 @@ export class Effects {
           break;
         case 'ability':
           this.onAbility(e);
+          break;
+        case 'coinPickup':
+          this.onCoinPickup(e);
+          break;
+        case 'coinDrop':
+          this.onCoinDrop(e);
           break;
       }
     }
@@ -122,6 +142,27 @@ export class Effects {
         this.dust.explode(8, e.x - e.dirX * 20, e.y - e.dirY * 20);
       }
     }
+  }
+
+  private onCoinPickup(e: Extract<GameEvent, { type: 'coinPickup' }>): void {
+    const mine = e.playerId === this.host.humanId;
+    if (mine) {
+      const now = this.host.scene.time.now;
+      this.coinStreak = now - this.lastCoinTime < 600 ? Math.min(this.coinStreak + 1, 8) : 0;
+      this.lastCoinTime = now;
+      sfx.coin(1, 0, 1 + this.coinStreak * 0.06);
+      this.popText(e.x, e.y - 20, `+${e.value}`, '#ffd23f', 0.6);
+    } else {
+      const { vol, pan } = this.spatial(e.x, e.y);
+      sfx.coin(vol * 0.35, pan);
+    }
+    if (this.onScreen(e.x, e.y)) this.glints.explode(mine ? 8 : 4, e.x, e.y);
+  }
+
+  private onCoinDrop(e: Extract<GameEvent, { type: 'coinDrop' }>): void {
+    const { vol, pan } = this.spatial(e.x, e.y);
+    sfx.coinScatter(e.playerId === this.host.humanId ? 1 : vol, pan, e.count);
+    if (e.playerId === this.host.humanId) this.popText(e.x, e.y - 50, `-${e.count}`, '#ff8787', 0.8);
   }
 
   private onFall(e: Extract<GameEvent, { type: 'fall' }>): void {

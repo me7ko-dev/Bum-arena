@@ -111,6 +111,25 @@ export class Sfx {
     src.stop(o.t + 0.3);
   }
 
+  /** Взета монета – „блинг“. pitch расте при бързо събиране (серия). */
+  coin(volume: number, pan: number, pitch = 1): void {
+    const o = this.out(volume * 0.3, pan);
+    if (!o) return;
+    this.tone(o, 'square', 988 * pitch, 988 * pitch, 0.05, 0.35);
+    this.tone(o, 'square', 1319 * pitch, 1319 * pitch, 0.12, 0.35, 0.05);
+  }
+
+  /** Разпилени монети – няколко бързи звънчета. */
+  coinScatter(volume: number, pan: number, count: number): void {
+    const o = this.out(volume * 0.25, pan);
+    if (!o) return;
+    const n = Math.min(6, 2 + Math.floor(count / 3));
+    for (let i = 0; i < n; i++) {
+      const f = 1400 + Math.random() * 900;
+      this.tone(o, 'triangle', f, f * 0.9, 0.08, 0.4, i * 0.035);
+    }
+  }
+
   /** Суперсилата е презаредена – тихо „дзън“. */
   ready(): void {
     const o = this.out(0.18);

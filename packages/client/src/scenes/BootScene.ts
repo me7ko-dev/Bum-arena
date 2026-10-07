@@ -19,6 +19,7 @@ export class BootScene extends Phaser.Scene {
     this.makeDot();
     this.makeRing();
     this.makeStar();
+    this.makeCoin();
     this.scene.start('Game');
   }
 
@@ -86,6 +87,23 @@ export class BootScene extends Phaser.Scene {
     g.lineStyle(8, 0xffffff, 1);
     g.strokeCircle(64, 64, 58);
     g.generateTexture('ring', 128, 128);
+    g.destroy();
+  }
+
+  /** Монета: златна с контур, вътрешен кръг и отблясък. 40×40. */
+  private makeCoin(): void {
+    const g = this.add.graphics();
+    g.fillStyle(COLORS.outline, 1);
+    g.fillCircle(20, 20, 20);
+    g.fillStyle(0xf5a524, 1);
+    g.fillCircle(20, 20, 16);
+    g.fillStyle(0xffd23f, 1);
+    g.fillCircle(20, 19, 13);
+    g.lineStyle(3, 0xf5a524, 1);
+    g.strokeCircle(20, 19, 8);
+    g.fillStyle(0xffffff, 0.8);
+    g.fillEllipse(14, 13, 6, 4);
+    g.generateTexture('coin', 40, 40);
     g.destroy();
   }
 

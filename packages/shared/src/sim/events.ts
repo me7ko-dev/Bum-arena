@@ -30,6 +30,20 @@ export type GameEvent =
       dirY: number;
     }
   | {
+      type: 'coinPickup';
+      playerId: number;
+      value: number;
+      x: number;
+      y: number;
+    }
+  | {
+      type: 'coinDrop';
+      playerId: number;
+      count: number;
+      x: number;
+      y: number;
+    }
+  | {
       type: 'fall';
       playerId: number;
       /** Кой го е избутал (null = падна сам). */

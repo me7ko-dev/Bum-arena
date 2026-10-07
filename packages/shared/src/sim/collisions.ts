@@ -102,4 +102,10 @@ function registerHit(world: World, attacker: Player, victim: Player, strength: n
     const t = hc.stunMin + (hc.stunMax - hc.stunMin) * strength;
     victim.stun = Math.max(victim.stun, t);
   }
+  // Силен удар → удареният изпуска част от монетите си.
+  const cc = world.cfg.coins;
+  if (stun && strength >= cc.dropThreshold && victim.coins > 0) {
+    const n = Math.max(cc.hitDropMin, Math.floor(victim.coins * cc.hitDropFraction));
+    world.coinSystem.scatter(victim, n, victim.x, victim.y);
+  }
 }
