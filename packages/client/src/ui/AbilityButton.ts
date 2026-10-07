@@ -57,7 +57,7 @@ export class AbilityButton {
   /** Сменя иконката (напр. в кола бутонът е „слез“). */
   setIcon(frame: string): void {
     if (this.icon.frame.name === frame) return;
-    this.icon.setFrame(frame).setScale((this.radius * 1.35) / 128);
+    this.icon.setFrame(frame).setScale((this.radius * 1.1) / 128);
   }
 
   setKeyHintVisible(v: boolean): void {

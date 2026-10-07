@@ -4,6 +4,7 @@ import { sfx } from '../audio/Sfx';
 import { LocalGame } from '../game/LocalGame';
 import { HumanInput } from '../input/HumanInput';
 import { ArenaView } from '../render/ArenaView';
+import { Backdrop } from '../render/Backdrop';
 import { CarsView } from '../render/CarsView';
 import { CoinsView } from '../render/CoinsView';
 import { loadSettings, type PlayerSettings } from '../game/settings';
@@ -28,6 +29,7 @@ export class GameScene extends Phaser.Scene {
   arenaView!: ArenaView;
   private coinsView!: CoinsView;
   private carsView!: CarsView;
+  private backdrop!: Backdrop;
   /** С какво играе човекът (от менюто). */
   settings!: PlayerSettings;
   private effects!: Effects;
@@ -63,6 +65,7 @@ export class GameScene extends Phaser.Scene {
       bots: BOTS,
     });
     this.humanInput = new HumanInput(this);
+    this.backdrop = new Backdrop(this);
     this.arenaView = new ArenaView(this, this.match.world.cfg.arena.startRadius);
     this.coinsView = new CoinsView(this, this.match.world.cfg.coins.radius);
     this.carsView = new CarsView(this, this.match.world.cfg.cars.radius);
@@ -173,6 +176,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.coinsView.update(this.match.world.coins, alpha, dtSec);
     this.carsView.update(this.match.world.cars, dtSec);
+    this.backdrop.update(dtSec);
     for (const p of this.match.world.players) {
       this.playerViews.get(p.id)?.update(p, alpha, dtSec, cfg, p.id === this.match.world.crownId);
     }
