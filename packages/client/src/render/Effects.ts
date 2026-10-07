@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import type { GameEvent } from '@bum/shared';
+import type { Balance, GameEvent } from '@bum/shared';
+import { ATLAS } from '../assets';
 import { sfx } from '../audio/Sfx';
 import { FEEL } from '../config/feel';
 import { t } from '../i18n';
@@ -18,6 +19,8 @@ export interface EffectsHost {
   freeze(seconds: number): void;
   /** Кратко „удряне“ на камерата. */
   punchZoom(amount: number): void;
+  /** Текущият баланс (за радиусите на ефектите). */
+  cfg(): Balance;
 }
 
 /**
@@ -85,6 +88,46 @@ export class Effects {
         case 'coinDrop':
           this.onCoinDrop(e);
           break;
+        case 'carEnter':
+        case 'carExit': {
+          const { vol, pan } = this.spatial(e.x, e.y);
+          if (e.type === 'carEnter') sfx.carEnter(e.playerId === this.host.humanId ? 1 : vol, pan);
+          if (this.onScreen(e.x, e.y)) this.dust.explode(14, e.x, e.y);
+          break;
+        }
+        case 'carWreck': {
+          const { vol, pan } = this.spatial(e.x, e.y);
+          sfx.explosion(e.playerId === this.host.humanId ? 1 : vol, pan);
+          if (this.onScreen(e.x, e.y)) {
+            this.burst(e.x, e.y, 'boom', 1.3);
+            this.burst(e.x + 30, e.y - 20, 'fire', 0.8);
+            this.sparks.explode(30, e.x, e.y);
+            this.shockwave(e.x, e.y, 2.2);
+            this.host.scene.cameras.main.shake(260, 0.012, true);
+            this.host.freeze(0.08);
+          }
+          break;
+        }
+        case 'buy':
+          if (e.playerId === this.host.humanId) {
+            sfx.buy();
+            const p = this.host.views.get(e.playerId)?.container;
+            if (p) this.glints.explode(16, p.x, p.y);
+          }
+          break;
+        case 'crown':
+          if (e.playerId >= 0) {
+            sfx.crown();
+            const v = this.host.views.get(e.playerId)?.container;
+            if (v) this.burst(v.x, v.y - 60, 'crown', 0.9);
+          }
+          break;
+        case 'bounty':
+          if (e.playerId === this.host.humanId) {
+            const v = this.host.views.get(e.playerId)?.container;
+            if (v) this.popText(v.x, v.y - 90, `+${e.coins}`, '#ffd23f', 1.3);
+          }
+          break;
       }
     }
   }
@@ -130,18 +173,49 @@ export class Effects {
       this.host.freeze((FEEL.hitStopMs * (meInvolved ? 1 : 0.6)) / 1000);
     }
     if (meInvolved && s > 0.4) this.host.punchZoom(FEEL.zoomPunch * s);
+    if (s > 0.6) this.burst(e.x, e.y, 'boom', 0.4 + s * 0.5);
     if (s > 0.75) this.popText(e.x, e.y - 40, t('boom'), '#ffd23f', 1 + s * 0.3);
   }
 
   private onAbility(e: Extract<GameEvent, { type: 'ability' }>): void {
     const { vol, pan } = this.spatial(e.x, e.y);
     const mine = e.playerId === this.host.humanId;
-    if (e.ability === 'dash') {
-      sfx.dash(mine ? 1 : vol, pan);
-      if (this.onScreen(e.x, e.y)) {
-        // Прах зад гърба.
-        this.dust.explode(8, e.x - e.dirX * 20, e.y - e.dirY * 20);
-      }
+    const v = mine ? 1 : vol;
+    const visible = this.onScreen(e.x, e.y, 400);
+    switch (e.ability) {
+      case 'dash':
+        sfx.dash(v, pan);
+        if (visible) this.dust.explode(8, e.x - e.dirX * 20, e.y - e.dirY * 20);
+        break;
+      case 'freeze':
+        sfx.freeze(v, pan);
+        if (visible) {
+          this.ringBlast(e.x, e.y, 0x74c0fc, (this.cfgRadius('freeze') * 2) / 128);
+          for (const id of e.targets ?? []) {
+            const t = this.host.views.get(id)?.container;
+            if (t) this.burst(t.x, t.y - 20, 'snowflake', 0.5);
+          }
+        }
+        break;
+      case 'shield':
+        sfx.shield(v, pan);
+        if (visible) {
+          this.ringBlast(e.x, e.y, 0xa5d8ff, (this.cfgRadius('shield') * 2) / 128);
+          this.burst(e.x, e.y - 40, 'shield', 0.7);
+        }
+        break;
+      case 'magnet':
+        sfx.magnet(v, pan);
+        if (visible) this.burst(e.x, e.y - 60, 'magnet', 0.6);
+        break;
+      case 'giant':
+        sfx.giant(v, pan);
+        if (visible) {
+          this.burst(e.x, e.y - 50, 'mushroom', 0.8);
+          this.dust.explode(20, e.x, e.y);
+          this.host.scene.cameras.main.shake(200, mine ? 0.008 : 0.003, true);
+        }
+        break;
     }
   }
 
@@ -179,6 +253,45 @@ export class Effects {
     }
   }
 
+  /** Радиус на суперсила от конфига (за визуализацията). */
+  private cfgRadius(id: 'freeze' | 'shield'): number {
+    return this.host.cfg().abilities[id].radius;
+  }
+
+  /** Изскачащ спрайт от атласа (💥, ❄️, 👑 …), който се уголемява и изчезва. */
+  burst(x: number, y: number, frame: string, scale: number): void {
+    const img = this.host.scene.add.image(x, y, ATLAS, frame).setDepth(LAYERS.popText).setScale(scale * 0.3);
+    img.setRotation((Math.random() - 0.5) * 0.6);
+    this.host.scene.tweens.add({
+      targets: img,
+      scale: scale,
+      duration: 180,
+      ease: 'Back.easeOut',
+      onComplete: () =>
+        this.host.scene.tweens.add({
+          targets: img,
+          alpha: 0,
+          y: y - 30,
+          duration: 300,
+          delay: 120,
+          onComplete: () => img.destroy(),
+        }),
+    });
+  }
+
+  /** Цветна ударна вълна до даден мащаб. */
+  private ringBlast(x: number, y: number, color: number, scale: number): void {
+    const ring = this.host.scene.add.image(x, y, 'ring').setDepth(LAYERS.effects).setScale(0.2).setTint(color);
+    this.host.scene.tweens.add({
+      targets: ring,
+      scale,
+      alpha: 0,
+      duration: 380,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+  }
+
   /** Разширяващ се пръстен. */
   private shockwave(x: number, y: number, size: number): void {
     const ring = this.host.scene.add.image(x, y, 'ring').setDepth(LAYERS.effects).setScale(0.2).setAlpha(0.9);
@@ -198,7 +311,7 @@ export class Effects {
       .text(x, y, text, {
         fontFamily: FONT_FAMILY,
         fontSize: '34px',
-        fontStyle: 'bold',
+        fontStyle: '900',
         color,
         stroke: '#2a1650',
         strokeThickness: 7,

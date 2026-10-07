@@ -4,15 +4,17 @@ import { sfx } from '../audio/Sfx';
 import { LocalGame } from '../game/LocalGame';
 import { HumanInput } from '../input/HumanInput';
 import { ArenaView } from '../render/ArenaView';
+import { CarsView } from '../render/CarsView';
 import { CoinsView } from '../render/CoinsView';
+import { loadSettings, type PlayerSettings } from '../game/settings';
 import { Effects } from '../render/Effects';
 import { PlayerView } from '../render/PlayerView';
 import { t } from '../i18n';
 
 /** Колко единици от света да се виждат по по-късата страна на екрана. */
-const VIEW_SIZE = 760;
+const VIEW_SIZE = 660;
 /** На изправен телефон – малко по-близо, за да не са човечетата дребни. */
-const VIEW_SIZE_PORTRAIT = 640;
+const VIEW_SIZE_PORTRAIT = 560;
 /** Брой ботове в етап 1 (общо 12 с теб). */
 const BOTS = 11;
 
@@ -25,6 +27,9 @@ export class GameScene extends Phaser.Scene {
   humanInput!: HumanInput;
   arenaView!: ArenaView;
   private coinsView!: CoinsView;
+  private carsView!: CarsView;
+  /** С какво играе човекът (от менюто). */
+  settings!: PlayerSettings;
   private effects!: Effects;
   private playerViews = new Map<number, PlayerView>();
   private baseZoom = 1;
@@ -40,6 +45,10 @@ export class GameScene extends Phaser.Scene {
     super('Game');
   }
 
+  init(data: { settings?: PlayerSettings }): void {
+    this.settings = data.settings ?? this.settings ?? loadSettings();
+  }
+
   create(): void {
     this.playerViews.clear();
     this.lastFrameMs = 0;
@@ -48,12 +57,15 @@ export class GameScene extends Phaser.Scene {
     this.match = new LocalGame({
       cfg: BALANCE,
       seed: Date.now() >>> 0,
-      humanName: t('you'),
+      humanName: this.settings.name || t('you'),
+      humanSkin: this.settings.skin,
+      humanAbility: this.settings.ability,
       bots: BOTS,
     });
     this.humanInput = new HumanInput(this);
     this.arenaView = new ArenaView(this, this.match.world.cfg.arena.startRadius);
     this.coinsView = new CoinsView(this, this.match.world.cfg.coins.radius);
+    this.carsView = new CarsView(this, this.match.world.cfg.cars.radius);
 
     for (const p of this.match.world.players) {
       this.playerViews.set(p.id, new PlayerView(this, p, p.id === this.match.humanId));
@@ -69,6 +81,7 @@ export class GameScene extends Phaser.Scene {
       },
       freeze: (s) => this.match.freeze(s),
       punchZoom: (a) => (this.zoomPunch = Math.max(this.zoomPunch, a)),
+      cfg: () => this.match.world.cfg,
     });
 
     const cam = this.cameras.main;
@@ -98,9 +111,16 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-M', () => (sfx.muted = !sfx.muted));
   }
 
-  /** Нов рунд веднага. */
+  /** Нов рунд веднага (със същите настройки). */
   restartRound(): void {
-    this.scene.restart();
+    this.scene.restart({ settings: this.settings });
+  }
+
+  /** Обратно към главното меню. */
+  goToMenu(): void {
+    this.scene.stop('Hud');
+    this.scene.stop();
+    this.game.events.emit('show-menu');
   }
 
   /** Играчът, когото гледаме (ние или наблюдаваният след падане). */
@@ -152,8 +172,9 @@ export class GameScene extends Phaser.Scene {
       this.match.world.round.phase === 'playing',
     );
     this.coinsView.update(this.match.world.coins, alpha, dtSec);
+    this.carsView.update(this.match.world.cars, dtSec);
     for (const p of this.match.world.players) {
-      this.playerViews.get(p.id)?.update(p, alpha, dtSec, cfg);
+      this.playerViews.get(p.id)?.update(p, alpha, dtSec, cfg, p.id === this.match.world.crownId);
     }
 
     // Чакаме малко след падането, за да видиш как летиш, после камерата превключва.

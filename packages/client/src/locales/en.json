@@ -31,5 +31,8 @@
   "ability.freeze": "Freeze",
   "ability.freeze.desc": "Freezes everyone nearby for 2 seconds.",
   "ability.shield": "Shield",
-  "ability.shield.desc": "Repels everything around you."
+  "ability.shield.desc": "Repels everything around you.",
+  "crownYours": "The crown is yours! Watch out!",
+  "menu": "Menu",
+  "exitCar": "Exit"
 }

@@ -31,5 +31,8 @@
   "ability.freeze": "Замразяване",
   "ability.freeze.desc": "Замразява всички наблизо за 2 секунди.",
   "ability.shield": "Щит",
-  "ability.shield.desc": "Отблъсква всичко около теб."
+  "ability.shield.desc": "Отблъсква всичко около теб.",
+  "crownYours": "Короната е твоя! Пази се!",
+  "menu": "Меню",
+  "exitCar": "Слез"
 }

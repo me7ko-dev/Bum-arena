@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { ATLAS } from '../assets';
 import { FONT_FAMILY } from '../theme';
 
 /**
@@ -14,12 +15,12 @@ export class StatCounter {
     const bg = scene.add.graphics();
     bg.fillStyle(0x2a1650, 0.65);
     bg.fillRoundedRect(-24, -22, 120, 44, 22);
-    const icon = scene.add.image(0, 0, iconKey).setScale(iconScale);
+    const icon = scene.add.image(0, 0, ATLAS, iconKey).setScale(iconScale);
     this.text = scene.add
       .text(26, 0, '0', {
         fontFamily: FONT_FAMILY,
         fontSize: '26px',
-        fontStyle: 'bold',
+        fontStyle: '900',
         color,
         stroke: '#2a1650',
         strokeThickness: 5,

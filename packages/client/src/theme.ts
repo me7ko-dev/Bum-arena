@@ -34,4 +34,4 @@ export function playerColor(index: number): number {
   return PLAYER_COLORS[((index % PLAYER_COLORS.length) + PLAYER_COLORS.length) % PLAYER_COLORS.length]!;
 }
 
-export const FONT_FAMILY = '"Trebuchet MS", "Segoe UI", Arial, sans-serif';
+export const FONT_FAMILY = 'Nunito, "Trebuchet MS", "Segoe UI", Arial, sans-serif';

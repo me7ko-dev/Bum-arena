@@ -7,6 +7,9 @@ import { GameScene } from './scenes/GameScene';
 import { HudScene } from './scenes/HudScene';
 import { COLORS } from './theme';
 import { getLang } from './i18n';
+import { loadSettings } from './game/settings';
+import '@fontsource/nunito/800.css';
+import '@fontsource/nunito/900.css';
 
 document.documentElement.lang = getLang();
 
@@ -24,6 +27,11 @@ const game = new Phaser.Game({
   input: { activePointers: 3 }, // джойстик + бутон + резерва
   fps: { target: 60 },
   scene: [BootScene, GameScene, HudScene],
+});
+
+// След зареждане на ресурсите → играта. (Тук ще се покаже главното меню.)
+game.events.once('boot-ready', () => {
+  game.scene.start('Game', { settings: loadSettings() });
 });
 
 // Панел за баланса: в режим за разработка или с ?tune в адреса.

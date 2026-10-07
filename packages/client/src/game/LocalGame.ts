@@ -1,4 +1,5 @@
 import {
+  ABILITY_IDS,
   BOT_NAMES,
   BotBrain,
   World,
@@ -6,8 +7,10 @@ import {
   type Balance,
   type GameEvent,
   type Player,
+  type AbilityId,
   type PlayerInput,
 } from '@bum/shared';
+import { SKINS } from './settings';
 
 /** Откъде LocalGame чете входа на човека (виж HumanInput). */
 export interface InputSource {
@@ -20,6 +23,8 @@ export interface LocalGameOptions {
   cfg: Balance;
   seed: number;
   humanName: string;
+  humanSkin: string;
+  humanAbility: AbilityId;
   /** Колко бота да има освен човека. */
   bots: number;
 }
@@ -47,12 +52,20 @@ export class LocalGame {
 
   constructor(opts: LocalGameOptions) {
     this.world = new World({ cfg: opts.cfg, seed: opts.seed });
-    this.humanId = this.world.addPlayer({ name: opts.humanName }).id;
+    this.humanId = this.world.addPlayer({
+      name: opts.humanName,
+      skin: opts.humanSkin,
+      ability: opts.humanAbility,
+    }).id;
+    // Ботовете са с различни скинове (не като твоя) и случайни суперсили.
+    const skins = SKINS.filter((s) => s !== opts.humanSkin);
     // Ботове с различни имена и трудност. В етап 3 те ще запълват празните места в стаята.
     const names = [...BOT_NAMES];
     for (let i = 0; i < opts.bots; i++) {
       const name = names.splice(this.world.rng.int(0, names.length - 1), 1)[0] ?? `Bot${i}`;
-      const p = this.world.addPlayer({ name, isBot: true });
+      const skin = skins.splice(this.world.rng.int(0, skins.length - 1), 1)[0] ?? SKINS[0]!;
+      const ability = this.world.rng.pick(ABILITY_IDS);
+      const p = this.world.addPlayer({ name, isBot: true, skin, ability });
       const difficulty = pickDifficulty(opts.cfg, this.world.rng);
       this.bots.push(new BotBrain(p.id, difficulty, (opts.seed ^ (p.id * 2654435761)) >>> 0));
     }

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { AbilityId } from '@bum/shared';
+import { ATLAS } from '../assets';
 import { FONT_FAMILY } from '../theme';
 
 /**
@@ -9,7 +9,7 @@ import { FONT_FAMILY } from '../theme';
 export class AbilityButton {
   readonly container: Phaser.GameObjects.Container;
   private bg: Phaser.GameObjects.Graphics;
-  private icon: Phaser.GameObjects.Graphics;
+  private icon: Phaser.GameObjects.Image;
   private pie: Phaser.GameObjects.Graphics;
   private label: Phaser.GameObjects.Text;
   private keyHint: Phaser.GameObjects.Text;
@@ -21,17 +21,17 @@ export class AbilityButton {
   constructor(
     scene: Phaser.Scene,
     private radius: number,
-    ability: AbilityId,
+    iconFrame: string,
     keyHint: string,
   ) {
     this.bg = scene.add.graphics();
-    this.icon = scene.add.graphics();
+    this.icon = scene.add.image(0, 0, ATLAS, iconFrame);
     this.pie = scene.add.graphics();
     this.label = scene.add
       .text(0, 0, '', {
         fontFamily: FONT_FAMILY,
         fontSize: `${Math.round(radius * 0.7)}px`,
-        fontStyle: 'bold',
+        fontStyle: '900',
         color: '#ffffff',
         stroke: '#2a1650',
         strokeThickness: 6,
@@ -41,7 +41,7 @@ export class AbilityButton {
       .text(0, radius + 16, keyHint, {
         fontFamily: FONT_FAMILY,
         fontSize: '16px',
-        fontStyle: 'bold',
+        fontStyle: '900',
         color: '#ffffff',
         stroke: '#2a1650',
         strokeThickness: 4,
@@ -51,7 +51,13 @@ export class AbilityButton {
     // По-голяма зона за натискане от самия кръг – по-лесно с палец.
     this.container.setInteractive(new Phaser.Geom.Circle(0, 0, radius + 22), Phaser.Geom.Circle.Contains);
     this.drawBg(true);
-    this.drawIcon(ability);
+    this.setIcon(iconFrame);
+  }
+
+  /** Сменя иконката (напр. в кола бутонът е „слез“). */
+  setIcon(frame: string): void {
+    if (this.icon.frame.name === frame) return;
+    this.icon.setFrame(frame).setScale((this.radius * 1.35) / 128);
   }
 
   setKeyHintVisible(v: boolean): void {
@@ -68,24 +74,6 @@ export class AbilityButton {
     g.fillCircle(0, 0, r);
     g.fillStyle(0xffffff, 0.18);
     g.fillEllipse(0, -r * 0.35, r * 1.4, r * 0.8);
-  }
-
-  /** Иконките са нарисувани с прости форми. */
-  private drawIcon(ability: AbilityId): void {
-    const g = this.icon;
-    const r = this.radius;
-    g.clear();
-    g.lineStyle(r * 0.16, 0xffffff, 1);
-    if (ability === 'dash') {
-      // „>>“ – две стрелки
-      for (const off of [-r * 0.22, r * 0.22]) {
-        g.beginPath();
-        g.moveTo(off - r * 0.2, -r * 0.35);
-        g.lineTo(off + r * 0.2, 0);
-        g.lineTo(off - r * 0.2, r * 0.35);
-        g.strokePath();
-      }
-    }
   }
 
   /**

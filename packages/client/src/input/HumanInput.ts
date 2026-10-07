@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import type { PlayerInput } from '@bum/shared';
+import { SHOP_ITEM_IDS, type PlayerInput, type ShopItemId } from '@bum/shared';
 import { KeyboardInput } from './KeyboardInput';
 
 /**
@@ -14,9 +14,19 @@ export class HumanInput {
   private touchY = 0;
   private touchAbilityHeld = false;
   private abilityLatch = false;
+  /** Покупка, която чака следващия тик. */
+  private pendingBuy: ShopItemId | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.keyboard = new KeyboardInput(scene, () => this.pressAbility());
+    // Клавиши 1–4 – магазин.
+    const keys = ['ONE', 'TWO', 'THREE', 'FOUR'];
+    keys.forEach((k, i) => scene.input.keyboard?.on(`keydown-${k}`, () => this.buy(SHOP_ITEM_IDS[i]!)));
+  }
+
+  /** Покупка от магазина (клавиш или бутон) – изпраща се със следващия тик. */
+  buy(item: ShopItemId): void {
+    this.pendingBuy = item;
   }
 
   /** От виртуалния джойстик (-1..1). */
@@ -44,11 +54,13 @@ export class HumanInput {
       mx: useKb ? kb.mx : this.touchX,
       my: useKb ? kb.my : this.touchY,
       ability: kb.ability || this.touchAbilityHeld || this.abilityLatch,
+      buy: this.pendingBuy,
     };
   }
 
   /** Вика се, след като тик е използвал входа. */
   consumeAbility(): void {
     this.abilityLatch = false;
+    this.pendingBuy = null;
   }
 }

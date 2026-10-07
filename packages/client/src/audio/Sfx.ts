@@ -165,6 +165,70 @@ export class Sfx {
     this.tone(o, 'triangle', 330, 262, 0.55, 0.4, 0.3);
   }
 
+  /** Замразяване – кристален звън. */
+  freeze(volume: number, pan: number): void {
+    const o = this.out(volume * 0.45, pan);
+    if (!o) return;
+    [2093, 2637, 3136, 2349].forEach((f, i) => this.tone(o, 'sine', f, f * 0.98, 0.25, 0.35, i * 0.04));
+    this.noise(o, 6000, 2, 0.3, 0.3);
+  }
+
+  /** Щит – „бум“ с ехо. */
+  shield(volume: number, pan: number): void {
+    const o = this.out(volume * 0.5, pan);
+    if (!o) return;
+    this.tone(o, 'sine', 300, 900, 0.18, 0.5);
+    this.tone(o, 'triangle', 600, 1200, 0.25, 0.25, 0.05);
+  }
+
+  /** Магнит – вибриращо „ууум“. */
+  magnet(volume: number, pan: number): void {
+    const o = this.out(volume * 0.4, pan);
+    if (!o) return;
+    this.tone(o, 'sawtooth', 120, 240, 0.6, 0.3);
+    this.tone(o, 'sine', 240, 480, 0.6, 0.3);
+  }
+
+  /** Гигант – растящ тон. */
+  giant(volume: number, pan: number): void {
+    const o = this.out(volume * 0.5, pan);
+    if (!o) return;
+    this.tone(o, 'square', 110, 55, 0.5, 0.3);
+    [262, 330, 392, 523].forEach((f, i) => this.tone(o, 'triangle', f, f, 0.12, 0.3, i * 0.07));
+  }
+
+  /** Влизане в кола – мотор. */
+  carEnter(volume: number, pan: number): void {
+    const o = this.out(volume * 0.5, pan);
+    if (!o) return;
+    this.tone(o, 'sawtooth', 70, 160, 0.35, 0.4);
+    this.tone(o, 'sawtooth', 160, 110, 0.3, 0.3, 0.35);
+  }
+
+  /** Разбита кола – експлозия. */
+  explosion(volume: number, pan: number): void {
+    const o = this.out(volume * 0.8, pan);
+    if (!o) return;
+    this.noise(o, 300, 0.7, 0.7, 1);
+    this.tone(o, 'sine', 120, 30, 0.6, 0.9);
+  }
+
+  /** Покупка – „ка-чинг“. */
+  buy(): void {
+    const o = this.out(0.5);
+    if (!o) return;
+    this.noise(o, 3000, 3, 0.05, 0.4);
+    this.tone(o, 'square', 1568, 1568, 0.08, 0.25, 0.05);
+    this.tone(o, 'square', 2093, 2093, 0.2, 0.25, 0.12);
+  }
+
+  /** Нова корона. */
+  crown(): void {
+    const o = this.out(0.4);
+    if (!o) return;
+    [784, 988, 1175, 1568].forEach((f, i) => this.tone(o, 'triangle', f, f, 0.15, 0.3, i * 0.06));
+  }
+
   /** Суперсилата е презаредена – тихо „дзън“. */
   ready(): void {
     const o = this.out(0.18);

@@ -30,7 +30,7 @@ export class Button {
       .text(0, 0, label, {
         fontFamily: FONT_FAMILY,
         fontSize: `${opts.fontSize ?? 28}px`,
-        fontStyle: 'bold',
+        fontStyle: '900',
         color: '#ffffff',
         stroke: '#2a1650',
         strokeThickness: 6,

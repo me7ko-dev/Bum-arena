@@ -1,8 +1,9 @@
 import type Phaser from 'phaser';
 import type { Coin } from '@bum/shared';
+import { ATLAS } from '../assets';
 
-/** Текстурата 'coin' е 40 px (радиус 20). */
-const COIN_TEX_RADIUS = 20;
+/** Кадърът 'coin' е 128 px; монетата заема ~85% от него. */
+const COIN_TEX_RADIUS = 54;
 
 /**
  * Рисува всички монети. Спрайтовете се преизползват (pool), за да няма боклук в паметта.
@@ -27,7 +28,7 @@ export class CoinsView {
       this.seen.add(c.id);
       let s = this.sprites.get(c.id);
       if (!s) {
-        s = this.pool.pop() ?? this.scene.add.image(0, 0, 'coin');
+        s = this.pool.pop() ?? this.scene.add.image(0, 0, ATLAS, 'coin');
         s.setVisible(true);
         this.sprites.set(c.id, s);
       }

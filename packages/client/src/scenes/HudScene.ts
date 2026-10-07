@@ -1,10 +1,20 @@
 import Phaser from 'phaser';
-import { abilityCooldownTotal, placeOf, standings, type GameEvent } from '@bum/shared';
+import {
+  SHOP_ITEM_IDS,
+  abilityCooldownTotal,
+  placeOf,
+  standings,
+  type GameEvent,
+  type ShopItemId,
+} from '@bum/shared';
+import { ATLAS } from '../assets';
+import { ABILITY_INFO } from '../game/settings';
 import { sfx } from '../audio/Sfx';
 import { t, toggleLang } from '../i18n';
 import { FONT_FAMILY } from '../theme';
 import { AbilityButton } from '../ui/AbilityButton';
 import { Button } from '../ui/Button';
+import { ShopButton } from '../ui/ShopButton';
 import { StatCounter } from '../ui/StatCounter';
 import { VirtualJoystick } from '../ui/VirtualJoystick';
 import type { GameScene } from './GameScene';
@@ -18,9 +28,12 @@ function showFps(): boolean {
   return import.meta.env.DEV || new URLSearchParams(location.search).has('fps');
 }
 
+/** Иконки на нещата от магазина. */
+const SHOP_ICONS: Record<ShopItemId, string> = { size: 'muscle', speed: 'shoe', shield: 'bubbles', mega: 'glove' };
+
 const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   fontFamily: FONT_FAMILY,
-  fontStyle: 'bold',
+  fontStyle: '900',
   color: '#ffffff',
   stroke: '#2a1650',
   strokeThickness: 6,
@@ -47,6 +60,10 @@ export class HudScene extends Phaser.Scene {
   /** Пръстът, който държи бутона за суперсила (-1 = никой). */
   private abilityPointerId = -1;
   private isTouch = false;
+  private shopButtons = new Map<ShopItemId, ShopButton>();
+  private feed!: Phaser.GameObjects.Container;
+  private feedItems: { c: Phaser.GameObjects.Container; age: number }[] = [];
+  private crownArrow!: Phaser.GameObjects.Container;
   /** Панелът „Падна!“ или „Класиране“ (само един наведнъж). */
   private panel: Phaser.GameObjects.Container | null = null;
   private panelKind: 'eliminated' | 'results' | null = null;
@@ -66,9 +83,25 @@ export class HudScene extends Phaser.Scene {
 
   create(): void {
     const me = this.gameScene.match.human;
-    this.abilityBtn = new AbilityButton(this, 46, me.ability, 'SPACE');
-    this.coinCounter = new StatCounter(this, 'coin', 0.9, '#ffd23f');
-    this.koCounter = new StatCounter(this, 'star', 1.1);
+    this.abilityBtn = new AbilityButton(this, 46, ABILITY_INFO[me.ability].icon, 'SPACE');
+    for (const [i, item] of SHOP_ITEM_IDS.entries()) {
+      const btn = new ShopButton(this, 27, SHOP_ICONS[item], this.gameScene.match.world.cfg.shop[item].price, String(i + 1), () => {
+        sfx.unlock();
+        this.gameScene.humanInput.buy(item);
+      });
+      this.shopButtons.set(item, btn);
+    }
+    this.feed = this.add.container(0, 0);
+    const arrowG = this.add.graphics();
+    arrowG.fillStyle(0xffd23f, 1);
+    arrowG.fillTriangle(30, 0, 14, -12, 14, 12);
+    this.crownArrow = this.add.container(0, 0, [
+      arrowG,
+      this.add.image(0, 0, ATLAS, 'crown').setScale(0.28),
+    ]);
+    this.crownArrow.setVisible(false);
+    this.coinCounter = new StatCounter(this, 'coin', 0.3, '#ffd23f');
+    this.koCounter = new StatCounter(this, 'boom', 0.3);
     this.timerText = this.add.text(0, 0, '3:00', { ...TEXT_STYLE, fontSize: '34px' }).setOrigin(0.5, 0);
     this.aliveText = this.add.text(0, 0, '', { ...TEXT_STYLE, fontSize: '18px', strokeThickness: 4 }).setOrigin(0.5, 0);
     this.bannerText = this.add
@@ -112,6 +145,13 @@ export class HudScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const pad = Math.max(24, Math.min(width, height) * 0.05);
     this.abilityBtn.container.setPosition(width - pad - 46, height - pad - 56);
+    // Магазинът – колона над бутона за суперсила (лесно с палец).
+    let i = 0;
+    for (const btn of this.shopButtons.values()) {
+      btn.container.setPosition(width - pad - 34, height - pad - 56 - 112 - i * 66);
+      i++;
+    }
+    this.feed.setPosition(width - pad - 66, pad + 60);
     this.coinCounter.container.setPosition(pad + 10, pad + 10);
     this.koCounter.container.setPosition(pad + 10, pad + 62);
     this.timerText.setPosition(width / 2, pad - 12);
@@ -128,6 +168,7 @@ export class HudScene extends Phaser.Scene {
   private setupTouch(): void {
     this.isTouch = this.sys.game.device.input.touch;
     this.abilityBtn.setKeyHintVisible(!this.isTouch);
+    for (const b of this.shopButtons.values()) b.setKeyHintVisible(!this.isTouch);
     this.joystick = new VirtualJoystick(this);
     this.joystick.setDepth(-1);
     this.input.addPointer(2); // общо 3 пръста
@@ -191,7 +232,24 @@ export class HudScene extends Phaser.Scene {
     // Суперсила
     const becameReady = this.abilityBtn.update(me.abilityCooldown, abilityCooldownTotal(world.cfg, me), dtSec);
     if (becameReady && me.alive && world.round.phase === 'playing') sfx.ready();
-    this.abilityBtn.container.setVisible(me.alive && world.round.phase !== 'ended');
+    const inPlay = me.alive && world.round.phase !== 'ended';
+    this.abilityBtn.container.setVisible(inPlay);
+    this.abilityBtn.setIcon(me.inCar ? 'wrench' : ABILITY_INFO[me.ability].icon);
+
+    // Магазин
+    for (const [item, btn] of this.shopButtons) {
+      btn.container.setVisible(inPlay);
+      const price = world.cfg.shop[item].price;
+      const active =
+        (item === 'size' && me.buffSize > 0) ||
+        (item === 'speed' && me.buffSpeed > 0) ||
+        (item === 'shield' && me.buffShield > 0) ||
+        (item === 'mega' && me.buffMega > 0);
+      btn.update(me.coins >= price && world.round.phase === 'playing', active, dtSec);
+    }
+
+    this.updateFeed(dtSec);
+    this.updateCrownArrow();
 
     // Броячи
     this.coinCounter.set(me.coins);
@@ -249,8 +307,84 @@ export class HudScene extends Phaser.Scene {
         break;
       case 'fall':
         if (e.playerId === meId) this.time.delayedCall(250, () => sfx.lose());
+        this.addFeed(e.byId, e.playerId);
+        break;
+      case 'buy':
+        if (e.playerId === meId) this.shopButtons.get(e.item)?.flash();
+        break;
+      case 'crown':
+        if (e.playerId === meId) this.flashBanner(t('crownYours'));
         break;
     }
+  }
+
+  /** Кратко съобщение под таймера. */
+  private flashBanner(text: string): void {
+    const b = this.add.text(this.scale.width / 2, this.scale.height * 0.22, text, { ...TEXT_STYLE, fontSize: '30px', color: '#ffd23f' });
+    b.setOrigin(0.5).setScale(0.4);
+    this.tweens.add({ targets: b, scale: 1, duration: 260, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: b, alpha: 0, y: b.y - 30, delay: 1400, duration: 400, onComplete: () => b.destroy() });
+  }
+
+  /** Лента с избутванията (горе вдясно): „Боби 💥 Мими“. */
+  private addFeed(byId: number | null, victimId: number): void {
+    const world = this.gameScene.match.world;
+    const meId = this.gameScene.match.humanId;
+    const victim = world.getPlayer(victimId);
+    if (!victim) return;
+    const by = byId !== null ? world.getPlayer(byId) : undefined;
+    const style = (id: number) => ({
+      ...TEXT_STYLE,
+      fontSize: '16px',
+      strokeThickness: 4,
+      color: id === meId ? '#ffd23f' : '#ffffff',
+    });
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    const icon = this.add.image(0, 0, ATLAS, by ? 'boom' : 'skull').setScale(0.2);
+    const right = this.add.text(16, 0, victim.name, style(victim.id)).setOrigin(0, 0.5);
+    parts.push(icon, right);
+    if (by) parts.push(this.add.text(-16, 0, by.name, style(by.id)).setOrigin(1, 0.5));
+    const c = this.add.container(0, 0, parts);
+    this.feed.add(c);
+    this.feedItems.unshift({ c, age: 0 });
+    while (this.feedItems.length > 4) this.feedItems.pop()!.c.destroy();
+  }
+
+  private updateFeed(dtSec: number): void {
+    this.feedItems.forEach((it, i) => {
+      it.age += dtSec;
+      it.c.setPosition(0, i * 24);
+      it.c.setAlpha(it.age > 4 ? Math.max(0, 1 - (it.age - 4)) : 1);
+    });
+    for (let i = this.feedItems.length - 1; i >= 0; i--) {
+      if (this.feedItems[i]!.age > 5) this.feedItems.splice(i, 1)[0]!.c.destroy();
+    }
+  }
+
+  /** Стрелка по ръба на екрана към короната, ако носителят не се вижда. */
+  private updateCrownArrow(): void {
+    const world = this.gameScene.match.world;
+    const holder = world.crownId >= 0 ? world.getPlayer(world.crownId) : undefined;
+    const cam = this.gameScene.cameras.main;
+    if (!holder || !holder.alive || holder.id === this.gameScene.focusPlayer.id || world.round.phase !== 'playing') {
+      this.crownArrow.setVisible(false);
+      return;
+    }
+    const v = cam.worldView;
+    if (holder.x > v.x && holder.x < v.right && holder.y > v.y && holder.y < v.bottom) {
+      this.crownArrow.setVisible(false);
+      return;
+    }
+    const { width, height } = this.scale;
+    const cx = width / 2;
+    const cy = height / 2;
+    const ang = Math.atan2(holder.y - v.centerY, holder.x - v.centerX);
+    const margin = 46;
+    const kx = (cx - margin) / Math.max(1e-6, Math.abs(Math.cos(ang)));
+    const ky = (cy - margin) / Math.max(1e-6, Math.abs(Math.sin(ang)));
+    const k = Math.min(kx, ky);
+    this.crownArrow.setVisible(true).setPosition(cx + Math.cos(ang) * k, cy + Math.sin(ang) * k);
+    (this.crownArrow.list[0] as Phaser.GameObjects.Graphics).setRotation(ang);
   }
 
   /** Голям изскачащ надпис в центъра (3, 2, 1, БУМ!). */
@@ -362,16 +496,18 @@ export class HudScene extends Phaser.Scene {
       const style = { ...TEXT_STYLE, fontSize: '22px', color, strokeThickness: 4 };
       items.push(this.add.text(-w / 2 + 30, y, `${place}.`, style).setOrigin(0, 0.5));
       items.push(this.add.text(-w / 2 + 70, y, p.name, style).setOrigin(0, 0.5));
-      items.push(this.add.image(w / 2 - 150, y, 'star').setScale(0.8));
+      items.push(this.add.image(w / 2 - 150, y, ATLAS, 'boom').setScale(0.22));
       items.push(this.add.text(w / 2 - 132, y, String(p.knockouts), style).setOrigin(0, 0.5));
-      items.push(this.add.image(w / 2 - 80, y, 'coin').setScale(0.6));
+      items.push(this.add.image(w / 2 - 80, y, ATLAS, 'coin').setScale(0.22));
       items.push(this.add.text(w / 2 - 62, y, String(p.coins), style).setOrigin(0, 0.5));
       y += rowH;
     });
 
-    const again = new Button(this, t('again'), () => this.gameScene.restartRound(), { width: 200 });
-    again.container.setPosition(0, h / 2 - 50);
-    items.push(again.container);
+    const again = new Button(this, t('again'), () => this.gameScene.restartRound(), { width: 190 });
+    again.container.setPosition(-w / 4 + 10, h / 2 - 50);
+    const menu = new Button(this, t('menu'), () => this.gameScene.goToMenu(), { width: 150, color: 0x6b5a8e });
+    menu.container.setPosition(w / 4 + 10, h / 2 - 50);
+    items.push(again.container, menu.container);
 
     const lang = new Button(
       this,
