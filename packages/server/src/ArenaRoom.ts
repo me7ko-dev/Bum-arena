@@ -29,6 +29,7 @@ import {
   type PlayerInput,
   type RosterMessage,
   type ShopItemId,
+  RESULTS_SECONDS,
 } from '@bum/shared';
 import { ErrorCode, Room, ServerError, type Client } from 'colyseus';
 import { SKINS, sanitizeProfile, type Profile } from './profile';
@@ -45,7 +46,7 @@ export interface RoomTimings {
   roundSec?: number;
 }
 
-export const DEFAULT_TIMINGS: RoomTimings = { lobbyMs: 8000, resultsMs: 6000 };
+export const DEFAULT_TIMINGS: RoomTimings = { lobbyMs: 8000, resultsMs: RESULTS_SECONDS * 1000 };
 
 /** Опциите на onCreate: от клиента (JoinOptions) + от сървъра (timings). */
 interface CreateOptions {

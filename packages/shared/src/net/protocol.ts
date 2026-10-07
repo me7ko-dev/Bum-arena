@@ -18,6 +18,8 @@ export const ROOM_NAME = 'arena';
 export const DEFAULT_PORT = 2567;
 /** Максимум играчи в стая (хора + ботове). */
 export const ROOM_SIZE = 12;
+/** Колко секунди след края на рунда сървърът показва резултатите, преди следващия рунд. */
+export const RESULTS_SECONDS = 6;
 
 export const MSG = {
   /** Клиент → сървър: вход за следващия тик. */
@@ -68,6 +70,11 @@ export interface RosterMessage {
   you: number;
   roomId: string;
   private: boolean;
+  /**
+   * true = лоби (чака се да дойдат хора): round = 0, без ботове, светът не се симулира,
+   * а в снимките round.timeLeft = секунди до старта на първия рунд.
+   */
+  lobby?: boolean;
 }
 
 /**
