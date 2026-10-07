@@ -159,9 +159,10 @@ export class World3D {
     this.particles.update(dt);
     this.puffs.update(dt);
     this.shockwaves.update(dt);
+    // Качеството се сменя ПРЕДИ рисуване: смяната на размера изчиства платното.
+    this.adaptQuality(dt);
     this.updateCamera(focus, alpha, dt);
     this.renderer.render(this.scene, this.camera);
-    this.adaptQuality(dt);
   }
 
   /** На всеки 1.5 сек: под 45 FPS → по-ниска резолюция; над 58 → малко по-висока. */

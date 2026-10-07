@@ -54,9 +54,13 @@ function place(geo: THREE.BufferGeometry, p: Place): THREE.BufferGeometry {
 
 /** Слива части в една геометрия (всички трябва да имат position/normal/uv/color). */
 function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const merged = mergeGeometries(parts, false);
+  // Някои примитиви (RoundedBox) са без индекс – тогава всички стават без индекс.
+  const mixed = parts.some((g) => !g.index);
+  const list = mixed ? parts.map((g) => (g.index ? g.toNonIndexed() : g)) : parts;
+  const merged = mergeGeometries(list, false);
   if (!merged) throw new Error('mergeGeometries failed');
   parts.forEach((g) => g.dispose());
+  list.forEach((g) => g.dispose());
   return merged;
 }
 
