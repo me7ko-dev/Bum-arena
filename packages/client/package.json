@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@bum/shared": "*",
+    "@colyseus/sdk": "^0.18.5",
     "@fontsource/nunito": "^5.3.0",
     "lil-gui": "^0.21.0",
     "phaser": "^3.90.0",

@@ -9,6 +9,7 @@ export * from './input';
 export * from './bots/BotBrain';
 export * from './bots/names';
 export * from './math/rng';
+export * from './net/protocol';
 export * from './math/vec';
 export * from './sim/abilities';
 export * from './sim/arena';
