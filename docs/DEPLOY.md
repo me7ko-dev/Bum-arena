@@ -1,101 +1,52 @@
-# Пускане на сървъра в интернет
+# Пускане на играта в интернет
 
-Онлайн играта има две части:
+Играта е **една услуга**: игровият сървър (Node.js + Colyseus) сервира и самата игра (build-а на клиента),
+и онлайн връзката (WebSocket) – на един и същи адрес. Не се настройват адреси и CORS.
 
-| Част | Какво е | Къде се качва |
-|------|---------|---------------|
-| **Сървър** (`packages/server`) | Node.js + Colyseus, един процес, WebSocket | Fly.io / Render / Railway (контейнер от `Dockerfile`) |
-| **Клиент** (`packages/client`) | статични файлове след `npm run build` | всеки статичен хостинг (Netlify, Vercel, Cloudflare Pages, GitHub Pages …) |
+`Dockerfile` прави всичко: build на клиента (Vite) → сървър с готовите файлове.
 
-Клиентът трябва да знае адреса на сървъра – той се задава при **build** с `VITE_SERVER_URL`.
+- Портът идва от `PORT` (хостингите го задават сами), иначе `2567`.
+- `GET /health` → `ok` (health check).
+- Стаите са в паметта на процеса → **една инстанция**.
 
-## Сървърът накратко
+## Render (най-лесно, има безплатен план)
 
-- Слуша на порта от променливата `PORT` (облачните хостинги я задават сами), иначе `2567`.
-- `GET /health` → `ok` – за health check на хостинга.
-- CORS е отворен (клиентът може да е на друг домейн).
-- Всички стаи са в паметта на процеса → пускай **една инстанция** (без хоризонтално мащабиране;
-  за повече сървъри трябва Redis presence – етап 3.1).
-- Стартира TypeScript директно с `tsx` (няма отделна компилация).
+1. Влез в https://render.com с GitHub акаунта си.
+2. **New → Blueprint** → избери репото `Bum-arena` и клона с играта → **Apply**.
+   Render чете `render.yaml` и сам прави всичко (Docker build, health check).
+3. След ~5 мин играта е на `https://bum-arena.onrender.com` (или подобен адрес – вижда се в Render).
+   Прати линка на приятели – „Играй с приятели“ дава линк директно към твоята стая.
 
-Проба локално с Docker:
+Безплатният план „заспива“ след 15 мин без играчи – първото отваряне след това отнема ~1 мин.
+За игра без чакане избери платения Starter план (~7 $/мес) в настройките на услугата.
+
+## Fly.io (без заспиване, сървър в Букурещ)
 
 ```bash
-docker build -t bum-arena-server .
-docker run --rm -p 2567:2567 bum-arena-server
-curl http://localhost:2567/health   # → ok
+fly auth login
+fly launch --copy-config --no-deploy   # ползва fly.toml от репото (регион otp = Букурещ)
+fly deploy
+fly scale count 1                      # една машина – стаите са в паметта ѝ
 ```
 
-Без Docker: `npm run start:server` (или `npm run dev:server` с презареждане при промяна).
-
-## Fly.io
-
-1. Инсталирай `flyctl` и влез: `fly auth login`.
-2. В корена на репото: `fly launch --no-deploy` – засича `Dockerfile`. Избери име (напр. `bum-arena`)
-   и регион близо до играчите (за България: `otp` Букурещ или `fra` Франкфурт).
-3. В създадения `fly.toml` провери:
-
-   ```toml
-   [env]
-     PORT = "2567"
-
-   [http_service]
-     internal_port = 2567
-     force_https = true
-     auto_stop_machines = "off"   # иначе празната машина „заспива“ и първото влизане е бавно
-     min_machines_running = 1
-
-   [[http_service.checks]]
-     method = "GET"
-     path = "/health"
-     interval = "15s"
-     timeout = "2s"
-   ```
-
-4. `fly deploy`, после `fly scale count 1` (само една машина – стаите са в паметта ѝ).
-5. Адресът е `wss://<име>.fly.dev`.
-
-## Render
-
-1. **New → Web Service** → свържи GitHub репото.
-2. Runtime: **Docker** (Render засича `Dockerfile` в корена).
-3. Health Check Path: `/health`. Порт не се задава – Render подава `PORT` сам.
-4. Instances: 1. (Безплатният план „заспива“ след 15 мин без трафик – първото влизане отнема ~30 сек.)
-5. Адресът е `wss://<име>.onrender.com`.
+Адрес: `https://bum-arena.fly.dev` (името може да е заето – fly launch ще предложи друго).
 
 ## Railway
 
-1. **New Project → Deploy from GitHub repo** → избери репото. Railway засича `Dockerfile`.
-2. Settings → Networking → **Generate Domain** (Railway подава `PORT` сам).
-3. Settings → Deploy → Healthcheck Path: `/health`; Replicas: 1.
-4. Адресът е `wss://<име>.up.railway.app`.
+**New Project → Deploy from GitHub repo** → Railway засича `Dockerfile` →
+Settings → Networking → **Generate Domain**; Healthcheck Path: `/health`; Replicas: 1.
 
-## Насочване на клиента към сървъра
-
-Адресът се „вгражда“ в клиента при build:
+## Локално
 
 ```bash
-VITE_SERVER_URL=wss://bum-arena.fly.dev npm run build
-# → packages/client/dist – качи тази папка на статичния хостинг
+npm run build && npm run start:server   # → http://localhost:2567 (играта + сървърът)
+docker build -t bum-arena . && docker run --rm -p 2567:2567 bum-arena   # същото с Docker
 ```
 
-На Netlify / Vercel / Cloudflare Pages добави `VITE_SERVER_URL` като променлива на средата
-в настройките на проекта (build command: `npm run build`, папка: `packages/client/dist`).
+## Отделен статичен хостинг (по желание)
 
-Без `VITE_SERVER_URL` клиентът търси сървъра на същия хост, порт 2567
-(`ws://<хост>:2567`) – удобно за локална игра по Wi-Fi с `npm run dev`.
-
-Важно:
-
-- Страница по **https** може да се свързва само към **wss://** (не `ws://`). Всички хостинги
-  по-горе дават https/wss автоматично.
-- След промяна на протокола (`PROTOCOL_VERSION` в `packages/shared/src/net/protocol.ts`)
-  качи **и сървъра, и клиента** – сървърът отказва клиенти с друга версия.
-
-## Проверка след качване
+Ако искаш клиентът да е другаде (Netlify, Vercel, GitHub Pages), задай адреса на сървъра при build:
 
 ```bash
-curl https://<адрес-на-сървъра>/health   # → ok
+VITE_SERVER_URL=wss://bum-arena.onrender.com npm run build   # → packages/client/dist
 ```
-
-После отвори клиента в два браузъра → „Играй онлайн“ – трябва да сте в една стая.

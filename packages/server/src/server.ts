@@ -5,6 +5,7 @@
 import { ROOM_NAME } from '@bum/shared';
 import { Server, WebSocketTransport, createEndpoint, createRouter } from 'colyseus';
 import { ArenaRoom, DEFAULT_TIMINGS, type RoomTimings } from './ArenaRoom';
+import { staticDir, staticEndpoints } from './static';
 
 export interface GameServerOptions {
   port: number;
@@ -36,7 +37,9 @@ export async function startGameServer(opts: GameServerOptions): Promise<GameServ
     gracefullyShutdown: opts.handleSignals ?? true,
   });
   // CORS е отворен по подразбиране в Colyseus (Access-Control-Allow-Origin = Origin на заявката).
-  server.router = createRouter({ health });
+  // Ако има build на клиента – сървърът сервира и самата игра (един адрес за всичко).
+  const dir = staticDir();
+  server.router = dir ? createRouter({ health, ...staticEndpoints(dir) }) : createRouter({ health });
   // Времената идват от сървъра и презаписват всичко, пратено от клиента.
   server.define(ROOM_NAME, ArenaRoom, { timings: { ...DEFAULT_TIMINGS, ...opts.timings } });
   await server.listen(opts.port);

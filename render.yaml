@@ -1,0 +1,10 @@
+# Render Blueprint: New → Blueprint → избери това репо → Apply.
+# Една услуга: сървърът сервира и играта, и онлайн връзката (WebSocket) на един адрес.
+services:
+  - type: web
+    name: bum-arena
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true

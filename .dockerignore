@@ -8,6 +8,3 @@
 .vite
 docs
 scripts
-packages/client/src
-packages/client/public
-packages/client/index.html

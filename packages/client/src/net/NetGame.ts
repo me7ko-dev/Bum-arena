@@ -315,6 +315,8 @@ export function serverUrl(): string {
   const env = import.meta.env.VITE_SERVER_URL;
   if (env) return env;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  // В production играта се сервира от самия игрови сървър → същият адрес.
+  if (import.meta.env.PROD) return `${proto}://${location.host}`;
   return `${proto}://${location.hostname}:${DEFAULT_PORT}`;
 }
 
