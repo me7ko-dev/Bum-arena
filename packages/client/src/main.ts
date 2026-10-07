@@ -7,7 +7,7 @@ import { GameScene } from './scenes/GameScene';
 import { HudScene } from './scenes/HudScene';
 import { COLORS } from './theme';
 import { getLang } from './i18n';
-import { loadSettings } from './game/settings';
+import { hideMenu, showMenu } from './menu/Menu';
 import '@fontsource/nunito/800.css';
 import '@fontsource/nunito/900.css';
 
@@ -29,10 +29,16 @@ const game = new Phaser.Game({
   scene: [BootScene, GameScene, HudScene],
 });
 
-// След зареждане на ресурсите → играта. (Тук ще се покаже главното меню.)
-game.events.once('boot-ready', () => {
-  game.scene.start('Game', { settings: loadSettings() });
-});
+// След зареждане на ресурсите → главното меню. „ИГРАЙ!“ → рунд; „Меню“ в края → обратно тук.
+const openMenu = () =>
+  showMenu({
+    onPlay: (settings) => {
+      hideMenu();
+      game.scene.start('Game', { settings });
+    },
+  });
+game.events.once('boot-ready', openMenu);
+game.events.on('show-menu', openMenu);
 
 // Панел за баланса: в режим за разработка или с ?tune в адреса.
 if (import.meta.env.DEV || new URLSearchParams(location.search).has('tune')) {
