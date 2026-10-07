@@ -365,20 +365,19 @@ export class HudScene extends Phaser.Scene {
   private updateCrownArrow(): void {
     const world = this.gameScene.match.world;
     const holder = world.crownId >= 0 ? world.getPlayer(world.crownId) : undefined;
-    const cam = this.gameScene.cameras.main;
     if (!holder || !holder.alive || holder.id === this.gameScene.focusPlayer.id || world.round.phase !== 'playing') {
       this.crownArrow.setVisible(false);
       return;
     }
-    const v = cam.worldView;
-    if (holder.x > v.x && holder.x < v.right && holder.y > v.y && holder.y < v.bottom) {
+    const sp = this.gameScene.worldToScreen(holder.x, holder.y, 40);
+    if (sp.visible) {
       this.crownArrow.setVisible(false);
       return;
     }
     const { width, height } = this.scale;
     const cx = width / 2;
     const cy = height / 2;
-    const ang = Math.atan2(holder.y - v.centerY, holder.x - v.centerX);
+    const ang = Math.atan2(sp.y - cy, sp.x - cx);
     const margin = 46;
     const kx = (cx - margin) / Math.max(1e-6, Math.abs(Math.cos(ang)));
     const ky = (cy - margin) / Math.max(1e-6, Math.abs(Math.sin(ang)));

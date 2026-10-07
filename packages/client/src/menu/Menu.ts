@@ -67,13 +67,33 @@ function loadAtlas(): Promise<Atlas> {
 /** Слага кадър от атласа като фон на елемента (мащабиран до sizePx). */
 function setSprite(el: HTMLElement, frame: string, sizePx: number): void {
   el.dataset.frame = frame;
+  const thumb = skinThumbs?.get(frame);
+  if (thumb) {
+    el.style.backgroundImage = `url("${thumb}")`;
+    el.style.backgroundSize = 'contain';
+    el.style.backgroundPosition = 'center';
+    el.style.backgroundRepeat = 'no-repeat';
+    return;
+  }
   void loadAtlas().then((atlas) => {
     const f = atlas.frames[frame];
-    if (!f || el.dataset.frame !== frame) return; // междувременно е сменен
+    if (!f || el.dataset.frame !== frame || skinThumbs?.has(frame)) return; // междувременно е сменен
     const k = sizePx / f.w;
     el.style.backgroundImage = `url("${ASSETS}sprites.webp")`;
     el.style.backgroundSize = `${atlas.w * k}px ${atlas.h * k}px`;
     el.style.backgroundPosition = `${-f.x * k}px ${-f.y * k}px`;
+  });
+}
+
+/** 3D снимки на героите (скин → data URL). Ако ги няма – показва се емоджито. */
+let skinThumbs: Map<string, string> | null = null;
+
+/** Подава 3D снимките на героите (вика се от main.ts след зареждане). */
+export function setSkinThumbnails(thumbs: Map<string, string>): void {
+  if (thumbs.size === 0) return;
+  skinThumbs = thumbs;
+  document.querySelectorAll<HTMLElement>('.bm-sprite[data-frame^="skin_"]').forEach((el) => {
+    setSprite(el, el.dataset.frame!, parseFloat(el.style.width));
   });
 }
 

@@ -1,41 +1,42 @@
 import Phaser from 'phaser';
 import { BALANCE, standings, type GameEvent, type Player } from '@bum/shared';
+import { ATLAS } from '../assets';
 import { sfx } from '../audio/Sfx';
 import { LocalGame } from '../game/LocalGame';
 import { HumanInput } from '../input/HumanInput';
-import { ArenaView } from '../render/ArenaView';
-import { Backdrop } from '../render/Backdrop';
-import { CarsView } from '../render/CarsView';
-import { CoinsView } from '../render/CoinsView';
 import { loadSettings, type PlayerSettings } from '../game/settings';
-import { Effects } from '../render/Effects';
-import { PlayerView } from '../render/PlayerView';
+import { Effects3D } from '../render3d/Effects3D';
+import { World3D } from '../render3d/World3D';
 import { t } from '../i18n';
+import { FONT_FAMILY } from '../theme';
 
-/** Колко единици от света да се виждат по по-късата страна на екрана. */
-const VIEW_SIZE = 660;
-/** На изправен телефон – малко по-близо, за да не са човечетата дребни. */
-const VIEW_SIZE_PORTRAIT = 560;
-/** Брой ботове в етап 1 (общо 12 с теб). */
+/** Брой ботове (общо 12 с теб). */
 const BOTS = 11;
 
+/** 3D светът се създава веднъж за цялата игра (един WebGL контекст). */
+let world3d: World3D | null = null;
+
+/** Етикет над главата: име + лента за живота на колата. */
+interface Label {
+  container: Phaser.GameObjects.Container;
+  text: Phaser.GameObjects.Text;
+  bar: Phaser.GameObjects.Graphics;
+}
+
 /**
- * Основната сцена: свързва логиката (LocalGame) с рисуването, ефектите и входа.
+ * Основната сцена: върти логиката (LocalGame), подава данните на 3D света (Three.js)
+ * и рисува плоския слой отгоре – имена над главите и изскачащи надписи.
+ * Самата Phaser сцена е прозрачна: под нея се вижда 3D платното.
  */
 export class GameScene extends Phaser.Scene {
   match!: LocalGame;
   /** Входът на човека (клавиатура + сензорно). HUD-ът пише в него от джойстика. */
   humanInput!: HumanInput;
-  arenaView!: ArenaView;
-  private coinsView!: CoinsView;
-  private carsView!: CarsView;
-  private backdrop!: Backdrop;
   /** С какво играе човекът (от менюто). */
   settings!: PlayerSettings;
-  private effects!: Effects;
-  private playerViews = new Map<number, PlayerView>();
-  private baseZoom = 1;
-  private zoomPunch = 0;
+  world3d!: World3D;
+  private effects!: Effects3D;
+  private labels = new Map<number, Label>();
   /** Собствено измерване на времето между кадрите (Phaser изглажда delta-та). */
   private lastFrameMs = 0;
   /** Събитията от този кадър (HUD-ът също ги чете). */
@@ -52,7 +53,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.playerViews.clear();
+    this.labels.clear();
     this.lastFrameMs = 0;
     this.frameEvents = [];
     this.spectateId = -1;
@@ -65,35 +66,29 @@ export class GameScene extends Phaser.Scene {
       bots: BOTS,
     });
     this.humanInput = new HumanInput(this);
-    this.backdrop = new Backdrop(this);
-    this.arenaView = new ArenaView(this, this.match.world.cfg.arena.startRadius);
-    this.coinsView = new CoinsView(this, this.match.world.cfg.coins.radius);
-    this.carsView = new CarsView(this, this.match.world.cfg.cars.radius);
 
-    for (const p of this.match.world.players) {
-      this.playerViews.set(p.id, new PlayerView(this, p, p.id === this.match.humanId));
-    }
+    world3d ??= new World3D(document.getElementById('game')!);
+    this.world3d = world3d;
+    this.world3d.reset();
+    this.world3d.resize();
 
-    this.effects = new Effects({
-      scene: this,
-      views: this.playerViews,
+    for (const p of this.match.world.players) this.labels.set(p.id, this.makeLabel(p));
+
+    this.effects = new Effects3D({
+      world3d: this.world3d,
       humanId: this.match.humanId,
-      listener: () => {
-        const v = this.cameras.main.worldView;
-        return { x: v.centerX, y: v.centerY };
-      },
-      freeze: (s) => this.match.freeze(s),
-      punchZoom: (a) => (this.zoomPunch = Math.max(this.zoomPunch, a)),
       cfg: () => this.match.world.cfg,
+      player: (id) => this.match.world.getPlayer(id),
+      listener: () => this.focusPlayer,
+      freeze: (s) => this.match.freeze(s),
+      popText: (x, y, h, text, color, scale) => this.popText(x, y, h, text, color, scale),
+      popIcon: (x, y, h, frame, scale) => this.popIcon(x, y, h, frame, scale),
+      visible: (x, y) => this.world3d.project(x, 30, y).visible,
     });
 
-    const cam = this.cameras.main;
-    cam.startFollow(this.playerViews.get(this.match.humanId)!.container, false, 0.12, 0.12);
-    this.updateZoom();
-    this.scale.on(Phaser.Scale.Events.RESIZE, this.updateZoom, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.scale.off(Phaser.Scale.Events.RESIZE, this.updateZoom, this);
-    });
+    const onResize = () => this.world3d.resize();
+    this.scale.on(Phaser.Scale.Events.RESIZE, onResize);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, onResize));
 
     this.setupGlobalKeys();
 
@@ -103,6 +98,23 @@ export class GameScene extends Phaser.Scene {
 
     // В dev режим сцената е достъпна от конзолата: window.__bum.match.world …
     if (import.meta.env.DEV) (window as unknown as { __bum: GameScene }).__bum = this;
+  }
+
+  private makeLabel(p: Player): Label {
+    const isMe = p.id === this.match.humanId;
+    const text = this.add
+      .text(0, 0, p.name, {
+        fontFamily: FONT_FAMILY,
+        fontSize: isMe ? '18px' : '16px',
+        fontStyle: '900',
+        color: isMe ? '#ffd23f' : '#ffffff',
+        stroke: '#2a1650',
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5, 1);
+    const bar = this.add.graphics();
+    const container = this.add.container(0, 0, [bar, text]);
+    return { container, text, bar };
   }
 
   /** Звукът се разрешава при първо действие; R = нов рунд; M = без звук. */
@@ -133,6 +145,11 @@ export class GameScene extends Phaser.Scene {
     return this.match.human;
   }
 
+  /** Точка от света върху екрана (за HUD-а – напр. стрелката към короната). */
+  worldToScreen(x: number, y: number, height = 0): { x: number; y: number; visible: boolean } {
+    return this.world3d.project(x, height, y);
+  }
+
   /**
    * След като си паднал, камерата следи този, който те е избутал,
    * а ако и той падне – водещия (най-много избутвания) от живите.
@@ -147,15 +164,80 @@ export class GameScene extends Phaser.Scene {
     let next: Player | undefined;
     if (this.spectateId < 0 && me.lastHitBy >= 0) next = w.getPlayer(me.lastHitBy);
     if (!next?.alive) next = standings(w).find((p) => p.alive);
-    if (!next) return;
-    this.spectateId = next.id;
-    this.cameras.main.startFollow(this.playerViews.get(next.id)!.container, false, 0.08, 0.08);
+    if (next) this.spectateId = next.id;
   }
 
-  private updateZoom(): void {
-    const { width, height } = this.scale;
-    const portrait = height > width * 1.3;
-    this.baseZoom = Math.min(width, height) / (portrait ? VIEW_SIZE_PORTRAIT : VIEW_SIZE);
+  // ───────────── Изскачащи надписи (екранни, закотвени към точка от света) ─────────────
+
+  private popText(x: number, y: number, h: number, text: string, color: string, scale = 1): void {
+    const s = this.world3d.project(x, h, y);
+    if (!s.visible) return;
+    const txt = this.add
+      .text(s.x, s.y, text, {
+        fontFamily: FONT_FAMILY,
+        fontSize: '34px',
+        fontStyle: '900',
+        color,
+        stroke: '#2a1650',
+        strokeThickness: 7,
+      })
+      .setOrigin(0.5)
+      .setDepth(100)
+      .setScale(0.3 * scale);
+    this.tweens.add({
+      targets: txt,
+      scale,
+      y: s.y - 40,
+      duration: 260,
+      ease: 'Back.easeOut',
+      onComplete: () =>
+        this.tweens.add({ targets: txt, alpha: 0, y: s.y - 70, duration: 350, delay: 200, onComplete: () => txt.destroy() }),
+    });
+  }
+
+  private popIcon(x: number, y: number, h: number, frame: string, scale = 1): void {
+    const s = this.world3d.project(x, h, y);
+    if (!s.visible) return;
+    const img = this.add.image(s.x, s.y, ATLAS, frame).setDepth(99).setScale(scale * 0.3);
+    img.setRotation((Math.random() - 0.5) * 0.6);
+    this.tweens.add({
+      targets: img,
+      scale: scale * 0.8,
+      duration: 180,
+      ease: 'Back.easeOut',
+      onComplete: () =>
+        this.tweens.add({ targets: img, alpha: 0, y: s.y - 30, duration: 300, delay: 120, onComplete: () => img.destroy() }),
+    });
+  }
+
+  /** Имената над главите и лентата за живота на колата. */
+  private updateLabels(): void {
+    const w = this.match.world;
+    const cfg = w.cfg;
+    for (const p of w.players) {
+      const label = this.labels.get(p.id);
+      const view = this.world3d.character(p.id);
+      if (!label || !view) continue;
+      if (!p.alive) {
+        label.container.setVisible(false);
+        continue;
+      }
+      const x = p.prevX + (p.x - p.prevX) * this.match.alpha;
+      const y = p.prevY + (p.y - p.prevY) * this.match.alpha;
+      const s = this.world3d.project(x, view.headHeight() + (w.crownId === p.id ? 26 : 0), y);
+      label.container.setVisible(s.visible).setPosition(s.x, s.y);
+      label.container.setDepth(s.y);
+      const g = label.bar;
+      g.clear();
+      if (p.inCar) {
+        const frac = Phaser.Math.Clamp(p.carHp / cfg.cars.hp, 0, 1);
+        const bw = 56;
+        g.fillStyle(0x2a1650, 0.9);
+        g.fillRoundedRect(-bw / 2 - 3, 2, bw + 6, 11, 5);
+        g.fillStyle(frac > 0.5 ? 0x8ce99a : frac > 0.25 ? 0xffd23f : 0xff5d73, 1);
+        g.fillRoundedRect(-bw / 2, 5, bw * frac, 5, 2.5);
+      }
+    }
   }
 
   override update(): void {
@@ -164,27 +246,13 @@ export class GameScene extends Phaser.Scene {
     this.lastFrameMs = now;
     this.match.update(dtSec, this.humanInput);
     this.frameEvents = this.match.drainEvents();
+    this.effects.update(dtSec);
     this.effects.handle(this.frameEvents);
-
-    const alpha = this.match.alpha;
-    const cfg = this.match.world.cfg;
-    this.arenaView.update(
-      this.match.world.arena,
-      dtSec,
-      cfg.arena.shrinkWarning,
-      this.match.world.round.phase === 'playing',
-    );
-    this.coinsView.update(this.match.world.coins, alpha, dtSec);
-    this.carsView.update(this.match.world.cars, dtSec);
-    this.backdrop.update(dtSec);
-    for (const p of this.match.world.players) {
-      this.playerViews.get(p.id)?.update(p, alpha, dtSec, cfg, p.id === this.match.world.crownId);
-    }
 
     // Чакаме малко след падането, за да видиш как летиш, после камерата превключва.
     if (!this.match.human.alive && this.match.human.fallTime > 1.2) this.updateSpectate();
 
-    this.zoomPunch *= Math.exp(-dtSec * 12);
-    this.cameras.main.setZoom(this.baseZoom * (1 + this.zoomPunch));
+    this.world3d.update(this.match.world, this.match.alpha, dtSec, this.focusPlayer, this.match.humanId);
+    this.updateLabels();
   }
 }
