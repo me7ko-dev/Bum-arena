@@ -8,7 +8,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w @bum/client",
+    "dev": "concurrently -n server,client -c magenta,cyan \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "npm run dev -w @bum/client",
+    "dev:server": "npm run dev -w @bum/server",
+    "start:server": "npm run start -w @bum/server",
     "build": "npm run build -w @bum/client",
     "preview": "npm run preview -w @bum/client",
     "test": "vitest run",

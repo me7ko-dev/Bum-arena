@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.log
+**/*.test.ts
+.git
+.claude
+.vite
+docs
+scripts
+packages/client/src
+packages/client/public
+packages/client/index.html
