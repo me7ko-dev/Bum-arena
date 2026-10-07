@@ -3,6 +3,7 @@ import { BALANCE, standings, type GameEvent, type Player } from '@bum/shared';
 import { ATLAS } from '../assets';
 import { sfx } from '../audio/Sfx';
 import { LocalGame } from '../game/LocalGame';
+import type { Match } from '../game/Match';
 import { HumanInput } from '../input/HumanInput';
 import { loadSettings, type PlayerSettings } from '../game/settings';
 import { Effects3D } from '../render3d/Effects3D';
@@ -23,13 +24,25 @@ interface Label {
   bar: Phaser.GameObjects.Graphics;
 }
 
+/** Данни при пускане на сцената: настройките и (онлайн) вече свързана игра. */
+export interface GameSceneData {
+  settings?: PlayerSettings;
+  /** Онлайн игра (NetGame). Без нея – офлайн „Тренировка“ срещу ботове. */
+  match?: Match;
+}
+
 /**
- * Основната сцена: върти логиката (LocalGame), подава данните на 3D света (Three.js)
+ * Основната сцена: върти играта (Match – LocalGame офлайн или NetGame онлайн),
+ * подава данните на 3D света (Three.js)
  * и рисува плоския слой отгоре – имена над главите и изскачащи надписи.
  * Самата Phaser сцена е прозрачна: под нея се вижда 3D платното.
  */
 export class GameScene extends Phaser.Scene {
-  match!: LocalGame;
+  match!: Match;
+  /** Онлайн играта, подадена отвън (оцелява при презареждане на сцената за нов рунд). */
+  private netMatch: Match | null = null;
+  /** Рундът (match.roundId), за който е построена сцената. */
+  private roundId = 0;
   /** Входът на човека (клавиатура + сензорно). HUD-ът пише в него от джойстика. */
   humanInput!: HumanInput;
   /** С какво играе човекът (от менюто). */
@@ -48,8 +61,9 @@ export class GameScene extends Phaser.Scene {
     super('Game');
   }
 
-  init(data: { settings?: PlayerSettings }): void {
+  init(data: GameSceneData): void {
     this.settings = data.settings ?? this.settings ?? loadSettings();
+    this.netMatch = data.match ?? null;
   }
 
   create(): void {
@@ -57,14 +71,17 @@ export class GameScene extends Phaser.Scene {
     this.lastFrameMs = 0;
     this.frameEvents = [];
     this.spectateId = -1;
-    this.match = new LocalGame({
-      cfg: BALANCE,
-      seed: Date.now() >>> 0,
-      humanName: this.settings.name || t('you'),
-      humanSkin: this.settings.skin,
-      humanAbility: this.settings.ability,
-      bots: BOTS,
-    });
+    this.match =
+      this.netMatch ??
+      new LocalGame({
+        cfg: BALANCE,
+        seed: Date.now() >>> 0,
+        humanName: this.settings.name || t('you'),
+        humanSkin: this.settings.skin,
+        humanAbility: this.settings.ability,
+        bots: BOTS,
+      });
+    this.roundId = this.match.roundId;
     this.humanInput = new HumanInput(this);
 
     world3d ??= new World3D(document.getElementById('game')!);
@@ -126,16 +143,19 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-M', () => (sfx.muted = !sfx.muted));
   }
 
-  /** Нов рунд веднага (със същите настройки). */
+  /** Нов рунд веднага (със същите настройки). Онлайн рундовете ги пуска сървърът. */
   restartRound(): void {
+    if (this.match.online) return;
     this.scene.restart({ settings: this.settings });
   }
 
-  /** Обратно към главното меню. */
-  goToMenu(): void {
+  /** Обратно към главното меню (онлайн – излиза от стаята). errorKey – съобщение в менюто. */
+  goToMenu(errorKey?: string): void {
+    this.match.dispose();
+    this.netMatch = null;
     this.scene.stop('Hud');
     this.scene.stop();
-    this.game.events.emit('show-menu');
+    this.game.events.emit('show-menu', errorKey ? { errorKey } : undefined);
   }
 
   /** Играчът, когото гледаме (ние или наблюдаваният след падане). */
@@ -241,6 +261,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   override update(): void {
+    // Онлайн: прекъсната връзка → менюто; нов рунд от сървъра → сцената наново.
+    if (this.match.disconnected) {
+      this.goToMenu(this.match.disconnected);
+      return;
+    }
+    if (this.match.roundId !== this.roundId) {
+      this.scene.restart({ settings: this.settings, match: this.match });
+      return;
+    }
     const now = performance.now();
     const dtSec = this.lastFrameMs ? Math.min((now - this.lastFrameMs) / 1000, 0.1) : 1 / 60;
     this.lastFrameMs = now;

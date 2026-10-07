@@ -17,6 +17,7 @@ import { Button } from '../ui/Button';
 import { ShopButton } from '../ui/ShopButton';
 import { StatCounter } from '../ui/StatCounter';
 import { VirtualJoystick } from '../ui/VirtualJoystick';
+import { inviteLink } from '../net/links';
 import type { GameScene } from './GameScene';
 
 export interface HudData {
@@ -30,6 +31,9 @@ function showFps(): boolean {
 
 /** Иконки на нещата от магазина. */
 const SHOP_ICONS: Record<ShopItemId, string> = { size: 'muscle', speed: 'shoe', shield: 'bubbles', mega: 'glove' };
+
+/** Височина на картата със стаята (онлайн). */
+const ROOM_BOX_H = 132;
 
 const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   fontFamily: FONT_FAMILY,
@@ -70,6 +74,20 @@ export class HudScene extends Phaser.Scene {
   /** Кога е показан панелът „Падна!“ (да не се показва пак след „Гледай“). */
   private eliminatedShown = false;
 
+  // ── Онлайн ──
+  /** Карта със стаята и „Копирай линк“ (в лобито и при отброяването). */
+  private roomBox: Phaser.GameObjects.Container | null = null;
+  private roomTitle!: Phaser.GameObjects.Text;
+  private roomHint!: Phaser.GameObjects.Text;
+  /** Линкът като текст – ако копирането не е успяло. */
+  private linkText!: Phaser.GameObjects.Text;
+  private pingText: Phaser.GameObjects.Text | null = null;
+  private spectatorBanner: Phaser.GameObjects.Text | null = null;
+  /** До кога (this.time.now) в картата пише „Линкът е копиран!“. */
+  private copiedUntil = 0;
+  /** „Следващ рунд след N…“ в панела с класирането. */
+  private nextRoundText: Phaser.GameObjects.Text | null = null;
+
   constructor() {
     super('Hud');
   }
@@ -79,6 +97,10 @@ export class HudScene extends Phaser.Scene {
     this.panel = null;
     this.panelKind = null;
     this.eliminatedShown = false;
+    this.roomBox = null;
+    this.pingText = null;
+    this.spectatorBanner = null;
+    this.nextRoundText = null;
   }
 
   create(): void {
@@ -127,6 +149,8 @@ export class HudScene extends Phaser.Scene {
       color: 0x6b5a8e,
     });
 
+    if (this.gameScene.match.online) this.createNetUi();
+
     this.setupTouch();
 
     // Enter / Space на панелите
@@ -160,6 +184,9 @@ export class HudScene extends Phaser.Scene {
     this.bigText.setPosition(width / 2, height * 0.38);
     this.spectateText.setPosition(width / 2, height - pad);
     this.fpsText.setPosition(pad - 10, pad + 92);
+    this.pingText?.setPosition(pad - 10, pad + (this.fpsText.visible ? 110 : 92));
+    this.spectatorBanner?.setPosition(width / 2, height - pad - 30);
+    this.layoutRoomBox(width, height, pad);
     this.soundBtn.container.setPosition(width - pad - 24, pad + 18);
     this.panel?.setPosition(width / 2, height / 2);
   }
@@ -228,11 +255,13 @@ export class HudScene extends Phaser.Scene {
       this.joystick.setVisible(false);
     }
     if (this.fpsText.visible) this.fpsText.setText(`${Math.round(this.game.loop.actualFps)} FPS`);
+    if (match.online) this.updateNetUi();
 
     // Суперсила
     const becameReady = this.abilityBtn.update(me.abilityCooldown, abilityCooldownTotal(world.cfg, me), dtSec);
     if (becameReady && me.alive && world.round.phase === 'playing') sfx.ready();
-    const inPlay = me.alive && world.round.phase !== 'ended';
+    // В лобито (онлайн) светът стои – без суперсила и магазин.
+    const inPlay = me.alive && world.round.phase !== 'ended' && !match.waiting;
     this.abilityBtn.container.setVisible(inPlay);
     this.abilityBtn.setIcon(me.inCar ? 'wrench' : ABILITY_INFO[me.ability].icon);
 
@@ -285,7 +314,7 @@ export class HudScene extends Phaser.Scene {
       this.time.delayedCall(900, () => this.showResults());
       this.panelKind = 'results'; // за да не се вика пак, докато чака
       this.closePanel(false);
-    } else if (!me.alive && r.phase === 'playing' && !this.eliminatedShown && me.fallTime > 0.9) {
+    } else if (!me.alive && !match.isSpectator && r.phase === 'playing' && !this.eliminatedShown && me.fallTime > 0.9) {
       this.eliminatedShown = true;
       this.showEliminated();
     }
@@ -395,7 +424,128 @@ export class HudScene extends Phaser.Scene {
   }
 
   private onPrimaryKey(): void {
-    if (this.panelKind === 'results' && this.panel) this.gameScene.restartRound();
+    // Онлайн следващият рунд го пуска сървърът.
+    if (this.panelKind === 'results' && this.panel && !this.gameScene.match.online) this.gameScene.restartRound();
+  }
+
+  // ───────────── Онлайн: стая, пинг, гледане ─────────────
+
+  private createNetUi(): void {
+    const match = this.gameScene.match;
+    this.pingText = this.add
+      .text(0, 0, '', { ...TEXT_STYLE, fontSize: '14px', strokeThickness: 3 })
+      .setOrigin(0, 0);
+    this.spectatorBanner = this.add
+      .text(0, 0, t('net.spectatorBanner'), { ...TEXT_STYLE, fontSize: '20px', color: '#9be7ff', strokeThickness: 5 })
+      .setOrigin(0.5, 1)
+      .setVisible(false);
+    if (!match.roomId) return;
+
+    const w = Math.min(340, this.scale.width - 32);
+    const h = ROOM_BOX_H;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.3);
+    bg.fillRoundedRect(-w / 2 + 4, -h / 2 + 6, w, h, 22);
+    bg.fillStyle(0x2a1650, 0.88);
+    bg.fillRoundedRect(-w / 2, -h / 2, w, h, 22);
+    bg.lineStyle(3, 0xffd23f, 0.9);
+    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 22);
+    this.roomTitle = this.add
+      .text(0, -h / 2 + 22, '', { ...TEXT_STYLE, fontSize: '22px', color: '#ffd23f', strokeThickness: 5 })
+      .setOrigin(0.5);
+    this.roomHint = this.add
+      .text(0, -h / 2 + 50, '', { ...TEXT_STYLE, fontSize: '15px', strokeThickness: 4, color: '#e5dbff' })
+      .setOrigin(0.5);
+    const copy = new Button(this, t('net.copyLink'), () => this.copyLink(), {
+      width: Math.min(220, w - 40),
+      height: 44,
+      fontSize: 20,
+      color: 0x4dabf7,
+    });
+    copy.container.setPosition(0, h / 2 - 34);
+    this.linkText = this.add
+      .text(0, h / 2 + 18, '', {
+        ...TEXT_STYLE,
+        fontSize: '14px',
+        strokeThickness: 4,
+        align: 'center',
+        wordWrap: { width: w - 16, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5, 0)
+      .setVisible(false);
+    this.roomBox = this.add.container(0, 0, [bg, this.roomTitle, this.roomHint, copy.container, this.linkText]);
+    this.roomBox.setVisible(false);
+  }
+
+  /**
+   * Картата със стаята не бива да закрива отброяването (3, 2, 1) в центъра:
+   * на широк екран е долу в средата (между джойстика и бутоните),
+   * на тесен (телефон изправен) – горе, под броячите.
+   */
+  private layoutRoomBox(width: number, height: number, pad: number): void {
+    if (!this.roomBox) return;
+    const h = ROOM_BOX_H;
+    const bottom = width >= 760;
+    this.roomBox.setPosition(width / 2, bottom ? height - pad - h / 2 - 8 : pad + 132 + h / 2);
+    // Линкът за ръчно копиране – откъм свободната страна на картата.
+    if (bottom) this.linkText.setOrigin(0.5, 1).setPosition(0, -h / 2 - 10);
+    else this.linkText.setOrigin(0.5, 0).setPosition(0, h / 2 + 14);
+  }
+
+  private updateNetUi(): void {
+    const match = this.gameScene.match;
+    const phase = match.world.round.phase;
+
+    if (this.pingText) {
+      const ping = match.ping;
+      this.pingText.setText(ping === null ? t('net.ping', { n: '…' }) : t('net.ping', { n: ping }));
+      this.pingText.setColor(ping === null || ping < 90 ? '#b2f2bb' : ping < 180 ? '#ffd23f' : '#ff8fa3');
+    }
+    this.spectatorBanner?.setVisible(match.isSpectator && phase !== 'ended' && !this.panel);
+
+    if (this.roomBox && match.roomId) {
+      const show = (match.waiting || phase === 'countdown') && !this.panel;
+      this.roomBox.setVisible(show);
+      if (show) {
+        this.roomTitle.setText(t('net.room', { id: match.roomId }));
+        const n = match.startsIn;
+        const copied = this.time.now < this.copiedUntil;
+        this.roomHint.setColor(copied ? '#b2f2bb' : '#e5dbff');
+        this.roomHint.setText(
+          copied
+            ? t('net.copied')
+            : n !== null && n > 0
+              ? t('net.startsIn', { n })
+              : match.waiting
+                ? t('net.waiting')
+                : t('net.inviteHint'),
+        );
+      }
+    }
+
+    if (this.nextRoundText) {
+      const n = match.nextRoundIn;
+      this.nextRoundText.setText(n !== null && n > 0 ? t('net.nextRound', { n }) : t('net.nextRoundSoon'));
+    }
+  }
+
+  /** Копира линка за покана; ако не може – показва го като текст. */
+  private copyLink(): void {
+    sfx.unlock();
+    const roomId = this.gameScene.match.roomId;
+    if (!roomId) return;
+    const link = inviteLink(roomId);
+    const ok = () => {
+      this.copiedUntil = this.time.now + 2000;
+      this.linkText.setVisible(false);
+      sfx.coin(0.6, 0);
+    };
+    const fail = () => {
+      if (copyWithTextarea(link)) ok();
+      else this.linkText.setText(`${t('net.copyManually')}\n${link}`).setVisible(true);
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(ok, fail);
+    else fail();
   }
 
   // ───────────── Панели ─────────────
@@ -403,6 +553,7 @@ export class HudScene extends Phaser.Scene {
   private closePanel(resetKind = true): void {
     this.panel?.destroy();
     this.panel = null;
+    this.nextRoundText = null;
     if (resetKind) this.panelKind = null;
   }
 
@@ -445,7 +596,10 @@ export class HudScene extends Phaser.Scene {
         .setOrigin(0.5),
     );
     const btnW = Math.min(190, (w - 60) / 2);
-    const again = new Button(this, t('playAgain'), () => this.gameScene.restartRound(), { width: btnW, fontSize: 24 });
+    // Онлайн рундът продължава без теб – вместо „Нова игра“ има „Меню“ (излиза от стаята).
+    const again = match.online
+      ? new Button(this, t('menu'), () => this.gameScene.goToMenu(), { width: btnW, color: 0x6b5a8e, fontSize: 24 })
+      : new Button(this, t('playAgain'), () => this.gameScene.restartRound(), { width: btnW, fontSize: 24 });
     again.container.setPosition(-btnW / 2 - 10, 75);
     const watch = new Button(this, t('spectate'), () => this.closePanel(), { width: btnW, color: 0x4dabf7, fontSize: 24 });
     watch.container.setPosition(btnW / 2 + 10, 75);
@@ -464,13 +618,15 @@ export class HudScene extends Phaser.Scene {
     const all = standings(world);
     const rowH = 34;
     // Колко реда се събират на екрана (телефон в хоризонтален режим е нисък).
-    const maxRows = Math.max(3, Math.min(8, Math.floor((this.scale.height - 32 - 230) / rowH)));
+    // Онлайн долу има още ред: „Следващ рунд след N…“ над бутона „Меню“.
+    const extraH = match.online ? 36 : 0;
+    const maxRows = Math.max(3, Math.min(8, Math.floor((this.scale.height - 32 - 230 - extraH) / rowH)));
     // Топ N; ако те няма в тях – последният ред е твоят (с истинското ти място).
     const rows = all.slice(0, maxRows).map((p, i) => ({ p, place: i + 1 }));
     const myPlace = all.findIndex((p) => p.id === meId) + 1;
     if (myPlace > maxRows) rows[rows.length - 1] = { p: all[myPlace - 1]!, place: myPlace };
     const w = Math.min(500, this.scale.width - 32);
-    const h = Math.min(this.scale.height - 32, 230 + rows.length * rowH);
+    const h = Math.min(this.scale.height - 32, 230 + extraH + rows.length * rowH);
 
     const items: Phaser.GameObjects.GameObject[] = [this.makePanelBg(w, h)];
     let y = -h / 2 + 46;
@@ -502,11 +658,21 @@ export class HudScene extends Phaser.Scene {
       y += rowH;
     });
 
-    const again = new Button(this, t('again'), () => this.gameScene.restartRound(), { width: 190 });
-    again.container.setPosition(-w / 4 + 10, h / 2 - 50);
     const menu = new Button(this, t('menu'), () => this.gameScene.goToMenu(), { width: 150, color: 0x6b5a8e });
-    menu.container.setPosition(w / 4 + 10, h / 2 - 50);
-    items.push(again.container, menu.container);
+    if (match.online) {
+      // Онлайн следващият рунд започва сам – брояч вместо „Пак!“.
+      this.nextRoundText = this.add
+        .text(0, h / 2 - 102, '', { ...TEXT_STYLE, fontSize: '20px', color: '#ffd23f', strokeThickness: 5 })
+        .setOrigin(0.5);
+      menu.container.setPosition(0, h / 2 - 50);
+      items.push(this.nextRoundText, menu.container);
+      this.updateNetUi();
+    } else {
+      const again = new Button(this, t('again'), () => this.gameScene.restartRound(), { width: 190 });
+      again.container.setPosition(-w / 4 + 10, h / 2 - 50);
+      menu.container.setPosition(w / 4 + 10, h / 2 - 50);
+      items.push(again.container, menu.container);
+    }
 
     const lang = new Button(
       this,
@@ -529,4 +695,23 @@ export class HudScene extends Phaser.Scene {
     this.panel.setScale(0.6).setAlpha(0);
     this.tweens.add({ targets: this.panel, scale: 1, alpha: 1, duration: 260, ease: 'Back.easeOut' });
   }
+}
+
+/** Старият начин за копиране (работи и без https, напр. от телефон в местната мрежа). */
+function copyWithTextarea(text: string): boolean {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  ta.remove();
+  return ok;
 }

@@ -1,7 +1,9 @@
 /**
  * Главното меню – HTML/CSS слой над Phaser платното (не е Phaser сцена).
  *
- * Играчът избира име, герой (скин) и суперсила и натиска „ИГРАЙ“.
+ * Играчът избира име, герой (скин) и суперсила и после как да играе:
+ * „Играй онлайн“ (главният бутон), „Играй с приятели“ (частна стая с линк)
+ * или „Тренировка“ (офлайн срещу ботове).
  * Всяка промяна се записва веднага (saveSettings). Текстовете идват от t('menu.*')
  * и се прерисуват при смяна на езика.
  */
@@ -21,10 +23,24 @@ import { t, toggleLang, onLangChange } from '../i18n';
 import { sfx } from '../audio/Sfx';
 import { PLAYER_COLORS } from '../theme';
 
+/** Как да се играе: бърза онлайн игра, частна стая с приятели или офлайн тренировка. */
+export type PlayMode = 'online' | 'friends' | 'training';
+
 export interface MenuOptions {
-  /** Вика се, когато играчът натисне „ИГРАЙ“ (или Enter). */
-  onPlay(settings: PlayerSettings): void;
+  /** Вика се при избор на игра (Enter = „Играй онлайн“). */
+  onPlay(settings: PlayerSettings, mode: PlayMode): void;
+  /** „Отказ“, докато се свързваме. */
+  onCancel?(): void;
 }
+
+/**
+ * Състояние под бутоните: свързване (бутоните са заключени) или грешка.
+ * Текстът е ключ за превод (прерисува се при смяна на езика).
+ */
+export type MenuStatus =
+  | { kind: 'connecting'; key?: string; params?: Record<string, string | number> }
+  | { kind: 'error'; key: string }
+  | null;
 
 // ---------------------------------------------------------------------------
 // Спрайтове от атласа като DOM елементи
@@ -153,6 +169,11 @@ let skinNameLabel: HTMLElement;
 let soundBtn: HTMLButtonElement;
 let langBtn: HTMLButtonElement;
 let hint: HTMLElement;
+let statusBox: HTMLElement;
+let statusText: HTMLElement;
+let statusAction: HTMLButtonElement;
+const playBtns: HTMLButtonElement[] = [];
+let status: MenuStatus = null;
 const skinBtns = new Map<string, HTMLButtonElement>();
 const abilityBtns = new Map<AbilityId, HTMLButtonElement>();
 
@@ -274,12 +295,36 @@ function build(): HTMLElement {
     abilityBtns.set(id, b);
   }
 
-  // 5. Голям бутон „ИГРАЙ“ (на телефон стои залепен долу)
+  // 5. Бутоните за игра (на телефон стоят залепени долу): голям „Играй онлайн“ + два по-малки.
   const playWrap = el('div', 'bm-play-wrap', left);
+  statusBox = el('div', 'bm-status bm-hidden', playWrap);
+  statusBox.setAttribute('role', 'status');
+  statusBox.setAttribute('aria-live', 'polite');
+  el('span', 'bm-status-icon', statusBox);
+  statusText = el('span', 'bm-status-text', statusBox);
+  statusAction = el('button', 'bm-status-action', statusBox);
+  statusAction.type = 'button';
+  statusAction.addEventListener('click', onStatusAction);
+
   const play = el('button', 'bm-play', playWrap);
   play.type = 'button';
-  i18nEl('span', 'bm-play-text', 'menu.play', play);
-  play.addEventListener('click', doPlay);
+  i18nEl('span', 'bm-play-text', 'menu.playOnline', play);
+  play.addEventListener('click', () => doPlay('online'));
+  playBtns.push(play);
+
+  const modes = el('div', 'bm-modes', playWrap);
+  const modeBtn = (mode: PlayMode, icon: string, key: string, subKey: string) => {
+    const b = el('button', `bm-mode bm-mode-${mode}`, modes);
+    b.type = 'button';
+    b.appendChild(spriteEl(icon, 30));
+    const txt = el('span', 'bm-mode-text', b);
+    i18nEl('span', 'bm-mode-name', key, txt);
+    i18nEl('span', 'bm-mode-sub', subKey, txt);
+    b.addEventListener('click', () => doPlay(mode));
+    playBtns.push(b);
+  };
+  modeBtn('friends', 'party', 'menu.playFriends', 'menu.playFriendsSub');
+  modeBtn('training', 'glove', 'menu.training', 'menu.trainingSub');
 
   // 6. Долу: език, звук, подсказка за управлението
   const foot = el('footer', 'bm-foot', left);
@@ -321,6 +366,41 @@ function renderTexts(): void {
   renderLogo();
   updateSkin();
   updateSound();
+  renderStatus();
+}
+
+/** Ред със състоянието (свързване / грешка) и заключване на бутоните. */
+function renderStatus(): void {
+  if (!root) return;
+  const busy = status?.kind === 'connecting';
+  for (const b of playBtns) {
+    b.disabled = busy;
+    b.classList.toggle('bm-busy', busy);
+  }
+  statusBox.classList.toggle('bm-hidden', !status);
+  statusBox.classList.toggle('bm-connecting', busy);
+  statusBox.classList.toggle('bm-error', status?.kind === 'error');
+  if (!status) return;
+  if (status.kind === 'connecting') {
+    statusText.textContent = t(status.key ?? 'menu.connecting', status.params);
+    statusAction.textContent = t('menu.cancel');
+    statusAction.removeAttribute('aria-label');
+  } else {
+    statusText.textContent = t(status.key);
+    statusAction.textContent = '×';
+    statusAction.setAttribute('aria-label', t('menu.close'));
+  }
+}
+
+function onStatusAction(): void {
+  if (status?.kind === 'connecting') opts?.onCancel?.();
+  setMenuStatus(null);
+}
+
+/** Показва „Свързване…“, грешка или нищо (null). */
+export function setMenuStatus(next: MenuStatus): void {
+  status = next;
+  renderStatus();
 }
 
 /** Логото – всяка буква е отделна, за да подскача на вълна. */
@@ -394,13 +474,18 @@ function randomName(): string {
   return t('menu.randomName', { n: 100 + Math.floor(Math.random() * 900) });
 }
 
-function doPlay(): void {
+/** Името за играта: въведеното или весело случайно. */
+export function playerSettings(): PlayerSettings {
+  return { ...settings, name: settings.name.trim() || randomName() };
+}
+
+function doPlay(mode: PlayMode): void {
   if (!root || root.classList.contains('bm-hidden') || !opts) return;
+  if (status?.kind === 'connecting') return;
   sfx.unlock();
-  const name = settings.name.trim() || randomName();
   // Затваряме клавиатурата на телефона.
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-  opts.onPlay({ ...settings, name });
+  opts.onPlay(playerSettings(), mode);
 }
 
 /**
@@ -413,15 +498,17 @@ function onKey(e: KeyboardEvent): void {
   if (e.key === 'Enter') {
     e.preventDefault();
     e.stopPropagation();
-    if (!e.repeat) doPlay();
+    if (!e.repeat) doPlay('online');
   } else if (e.target instanceof Node && root.contains(e.target)) {
     e.stopPropagation();
   }
 }
 
-export function showMenu(options: MenuOptions): void {
+/** Отваря менюто; status – напр. грешка след прекъсната връзка. */
+export function showMenu(options: MenuOptions, initialStatus: MenuStatus = null): void {
   opts = options;
   settings = loadSettings();
+  status = initialStatus;
   if (!root) {
     root = build();
     document.body.appendChild(root);
@@ -433,4 +520,5 @@ export function showMenu(options: MenuOptions): void {
 
 export function hideMenu(): void {
   root?.classList.add('bm-hidden');
+  status = null;
 }
