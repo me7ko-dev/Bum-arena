@@ -48,6 +48,8 @@ export class AbilityButton {
       })
       .setOrigin(0.5);
     this.container = scene.add.container(0, 0, [this.bg, this.icon, this.pie, this.label, this.keyHint]);
+    // По-голяма зона за натискане от самия кръг – по-лесно с палец.
+    this.container.setInteractive(new Phaser.Geom.Circle(0, 0, radius + 22), Phaser.Geom.Circle.Contains);
     this.drawBg(true);
     this.drawIcon(ability);
   }

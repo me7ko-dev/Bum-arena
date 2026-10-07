@@ -7,7 +7,8 @@ import type { PlayerInput } from '@bum/shared';
 export class KeyboardInput {
   private keys: Record<string, Phaser.Input.Keyboard.Key>;
 
-  constructor(scene: Phaser.Scene) {
+  /** onAbilityPress – вика се при всяко натискане на клавиш за суперсила (дори много кратко). */
+  constructor(scene: Phaser.Scene, onAbilityPress?: () => void) {
     const kb = scene.input.keyboard!;
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = kb.addKeys(
@@ -26,6 +27,11 @@ export class KeyboardInput {
       },
       true, // enableCapture – стрелките и Space да не скролват страницата
     ) as Record<string, Phaser.Input.Keyboard.Key>;
+    if (onAbilityPress) {
+      for (const name of ['ability', 'ability2', 'ability3']) {
+        this.keys[name]?.on('down', onAbilityPress);
+      }
+    }
   }
 
   private down(...names: string[]): boolean {

@@ -6,10 +6,16 @@ import { FONT_FAMILY } from '../theme';
 import { AbilityButton } from '../ui/AbilityButton';
 import { Button } from '../ui/Button';
 import { StatCounter } from '../ui/StatCounter';
+import { VirtualJoystick } from '../ui/VirtualJoystick';
 import type { GameScene } from './GameScene';
 
 export interface HudData {
   game: GameScene;
+}
+
+/** Брояч на FPS: в режим за разработка или с ?fps в адреса. */
+function showFps(): boolean {
+  return import.meta.env.DEV || new URLSearchParams(location.search).has('fps');
 }
 
 const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
@@ -35,6 +41,12 @@ export class HudScene extends Phaser.Scene {
   private bannerText!: Phaser.GameObjects.Text;
   private bigText!: Phaser.GameObjects.Text;
   private spectateText!: Phaser.GameObjects.Text;
+  private fpsText!: Phaser.GameObjects.Text;
+  private soundBtn!: Button;
+  private joystick!: VirtualJoystick;
+  /** Пръстът, който държи бутона за суперсила (-1 = никой). */
+  private abilityPointerId = -1;
+  private isTouch = false;
   /** Панелът „Падна!“ или „Класиране“ (само един наведнъж). */
   private panel: Phaser.GameObjects.Container | null = null;
   private panelKind: 'eliminated' | 'results' | null = null;
@@ -71,6 +83,19 @@ export class HudScene extends Phaser.Scene {
       .text(0, 0, '', { ...TEXT_STYLE, fontSize: '20px', strokeThickness: 4 })
       .setOrigin(0.5, 1);
 
+    this.fpsText = this.add
+      .text(0, 0, '', { ...TEXT_STYLE, fontSize: '14px', strokeThickness: 3 })
+      .setOrigin(0, 0)
+      .setVisible(showFps());
+    this.soundBtn = new Button(this, sfx.muted ? '×' : '♪', () => this.toggleSound(), {
+      width: 48,
+      height: 44,
+      fontSize: 24,
+      color: 0x6b5a8e,
+    });
+
+    this.setupTouch();
+
     // Enter / Space на панелите
     this.input.keyboard?.on('keydown-ENTER', () => this.onPrimaryKey());
     this.input.keyboard?.on('keydown-SPACE', () => this.onPrimaryKey());
@@ -94,7 +119,54 @@ export class HudScene extends Phaser.Scene {
     this.bannerText.setPosition(width / 2, pad + 78);
     this.bigText.setPosition(width / 2, height * 0.38);
     this.spectateText.setPosition(width / 2, height - pad);
+    this.fpsText.setPosition(pad - 10, pad + 92);
+    this.soundBtn.container.setPosition(width - pad - 24, pad + 18);
     this.panel?.setPosition(width / 2, height / 2);
+  }
+
+  /** Сензорно управление: джойстик навсякъде извън бутоните + бутон за суперсила. */
+  private setupTouch(): void {
+    this.isTouch = this.sys.game.device.input.touch;
+    this.abilityBtn.setKeyHintVisible(!this.isTouch);
+    this.joystick = new VirtualJoystick(this);
+    this.joystick.setDepth(-1);
+    this.input.addPointer(2); // общо 3 пръста
+
+    // Бутонът за суперсила.
+    const btn = this.abilityBtn;
+    btn.container.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => {
+      sfx.unlock();
+      this.abilityPointerId = p.id;
+      btn.pressed = true;
+      this.gameScene.humanInput.setTouchAbility(true);
+    });
+
+    // Джойстик – при докосване на празно място (не върху бутон/панел).
+    this.input.on(
+      Phaser.Input.Events.POINTER_DOWN,
+      (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+        sfx.unlock();
+        if (over.length > 0 || this.panel || !p.wasTouch) return;
+        if (!this.joystick.active) this.joystick.start(p);
+      },
+    );
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (p: Phaser.Input.Pointer) => this.joystick.move(p));
+    const release = (p: Phaser.Input.Pointer) => {
+      this.joystick.end(p);
+      if (p.id === this.abilityPointerId) {
+        this.abilityPointerId = -1;
+        btn.pressed = false;
+        this.gameScene.humanInput.setTouchAbility(false);
+      }
+    };
+    this.input.on(Phaser.Input.Events.POINTER_UP, release);
+    this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, release);
+  }
+
+  private toggleSound(): void {
+    sfx.unlock();
+    sfx.muted = !sfx.muted;
+    this.soundBtn.setLabel(sfx.muted ? '×' : '♪');
   }
 
   override update(_time: number, deltaMs: number): void {
@@ -104,6 +176,17 @@ export class HudScene extends Phaser.Scene {
     const dtSec = deltaMs / 1000;
 
     for (const e of this.gameScene.frameEvents) this.onEvent(e);
+
+    // Сензорно движение → входа на човека.
+    this.gameScene.humanInput.setTouchMove(this.joystick.x, this.joystick.y);
+    if (this.isTouch && me.alive && !this.panel && world.round.phase !== 'ended') {
+      const { height } = this.scale;
+      const pad = Math.max(24, Math.min(this.scale.width, height) * 0.05);
+      this.joystick.showIdleHint(pad + 90, height - pad - 90);
+    } else if (!this.joystick.active) {
+      this.joystick.setVisible(false);
+    }
+    if (this.fpsText.visible) this.fpsText.setText(`${Math.round(this.game.loop.actualFps)} FPS`);
 
     // Суперсила
     const becameReady = this.abilityBtn.update(me.abilityCooldown, abilityCooldownTotal(world.cfg, me), dtSec);

@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import type { Arena } from '@bum/shared';
 import { COLORS } from '../theme';
+import { LAYERS } from './layers';
 
 /** Размер на изпечената текстура на пода и радиусът на арената в нея. */
 const TEX_SIZE = 1024;
@@ -22,8 +23,8 @@ export class ArenaView {
 
   constructor(scene: Phaser.Scene, startRadius: number) {
     if (!scene.textures.exists(TEX_KEY)) bakeFloor(scene, startRadius);
-    this.floor = scene.add.image(0, 0, TEX_KEY).setDepth(-10);
-    this.danger = scene.add.graphics().setDepth(-9);
+    this.floor = scene.add.image(0, 0, TEX_KEY).setDepth(LAYERS.floor);
+    this.danger = scene.add.graphics().setDepth(LAYERS.danger);
   }
 
   /**

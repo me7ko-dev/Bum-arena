@@ -4,6 +4,7 @@ import { sfx } from '../audio/Sfx';
 import { FEEL } from '../config/feel';
 import { t } from '../i18n';
 import { FONT_FAMILY } from '../theme';
+import { LAYERS } from './layers';
 import type { PlayerView } from './PlayerView';
 
 /** Какво трябва на ефектите от сцената. */
@@ -43,7 +44,7 @@ export class Effects {
         blendMode: Phaser.BlendModes.ADD,
         emitting: false,
       })
-      .setDepth(20000);
+      .setDepth(LAYERS.effects);
     this.dust = scene.add
       .particles(0, 0, 'dot', {
         lifespan: { min: 300, max: 650 },
@@ -53,7 +54,7 @@ export class Effects {
         tint: [0xffffff, 0xd9f7ef],
         emitting: false,
       })
-      .setDepth(-5);
+      .setDepth(LAYERS.dust);
     this.glints = scene.add
       .particles(0, 0, 'dot', {
         lifespan: { min: 200, max: 380 },
@@ -63,7 +64,7 @@ export class Effects {
         blendMode: Phaser.BlendModes.ADD,
         emitting: false,
       })
-      .setDepth(20000);
+      .setDepth(LAYERS.effects);
   }
 
   handle(events: readonly GameEvent[]): void {
@@ -180,7 +181,7 @@ export class Effects {
 
   /** Разширяващ се пръстен. */
   private shockwave(x: number, y: number, size: number): void {
-    const ring = this.host.scene.add.image(x, y, 'ring').setDepth(19999).setScale(0.2).setAlpha(0.9);
+    const ring = this.host.scene.add.image(x, y, 'ring').setDepth(LAYERS.effects).setScale(0.2).setAlpha(0.9);
     this.host.scene.tweens.add({
       targets: ring,
       scale: size,
@@ -203,7 +204,7 @@ export class Effects {
         strokeThickness: 7,
       })
       .setOrigin(0.5)
-      .setDepth(20001)
+      .setDepth(LAYERS.popText)
       .setScale(0.3 * scale);
     this.host.scene.tweens.add({
       targets: t,

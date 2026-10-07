@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Balance, Player } from '@bum/shared';
 import { FONT_FAMILY, playerColor } from '../theme';
+import { LAYERS } from './layers';
 
 /** Размерът на текстурата 'body' е 128 px за радиус 64. */
 const BODY_TEX_RADIUS = 64;
@@ -159,7 +160,7 @@ export class PlayerView {
     const t = Math.min(1, p.fallTime / cfg.arena.fallDuration);
     this.container.setScale(1 - t * 0.75);
     this.container.setAlpha(1 - t);
-    this.container.setDepth(t > 0.12 ? -20 : 10000);
+    this.container.setDepth(t > 0.12 ? LAYERS.fallen : LAYERS.effects - 1);
     this.label.setVisible(false);
     for (const s of this.stars) s.setVisible(false);
     this.container.setVisible(t < 1);

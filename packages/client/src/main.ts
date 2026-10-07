@@ -10,7 +10,7 @@ import { getLang } from './i18n';
 
 document.documentElement.lang = getLang();
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   backgroundColor: COLORS.background,
@@ -25,3 +25,10 @@ new Phaser.Game({
   fps: { target: 60 },
   scene: [BootScene, GameScene, HudScene],
 });
+
+// Панел за баланса: в режим за разработка или с ?tune в адреса.
+if (import.meta.env.DEV || new URLSearchParams(location.search).has('tune')) {
+  void import('./dev/TuningPanel').then(({ TuningPanel }) => {
+    new TuningPanel(() => (game.scene.getScene('Game') as GameScene).restartRound());
+  });
+}

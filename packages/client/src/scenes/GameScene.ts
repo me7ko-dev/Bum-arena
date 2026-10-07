@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { BALANCE, standings, type GameEvent, type Player } from '@bum/shared';
 import { sfx } from '../audio/Sfx';
 import { LocalGame } from '../game/LocalGame';
-import { KeyboardInput } from '../input/KeyboardInput';
+import { HumanInput } from '../input/HumanInput';
 import { ArenaView } from '../render/ArenaView';
 import { CoinsView } from '../render/CoinsView';
 import { Effects } from '../render/Effects';
@@ -11,6 +11,8 @@ import { t } from '../i18n';
 
 /** Колко единици от света да се виждат по по-късата страна на екрана. */
 const VIEW_SIZE = 760;
+/** На изправен телефон – малко по-близо, за да не са човечетата дребни. */
+const VIEW_SIZE_PORTRAIT = 640;
 /** Брой ботове в етап 1 (общо 12 с теб). */
 const BOTS = 11;
 
@@ -19,7 +21,8 @@ const BOTS = 11;
  */
 export class GameScene extends Phaser.Scene {
   match!: LocalGame;
-  private keyboard!: KeyboardInput;
+  /** Входът на човека (клавиатура + сензорно). HUD-ът пише в него от джойстика. */
+  humanInput!: HumanInput;
   arenaView!: ArenaView;
   private coinsView!: CoinsView;
   private effects!: Effects;
@@ -48,7 +51,7 @@ export class GameScene extends Phaser.Scene {
       humanName: t('you'),
       bots: BOTS,
     });
-    this.keyboard = new KeyboardInput(this);
+    this.humanInput = new HumanInput(this);
     this.arenaView = new ArenaView(this, this.match.world.cfg.arena.startRadius);
     this.coinsView = new CoinsView(this, this.match.world.cfg.coins.radius);
 
@@ -128,14 +131,15 @@ export class GameScene extends Phaser.Scene {
 
   private updateZoom(): void {
     const { width, height } = this.scale;
-    this.baseZoom = Math.min(width, height) / VIEW_SIZE;
+    const portrait = height > width * 1.3;
+    this.baseZoom = Math.min(width, height) / (portrait ? VIEW_SIZE_PORTRAIT : VIEW_SIZE);
   }
 
   override update(): void {
     const now = performance.now();
     const dtSec = this.lastFrameMs ? Math.min((now - this.lastFrameMs) / 1000, 0.1) : 1 / 60;
     this.lastFrameMs = now;
-    this.match.update(dtSec, this.keyboard.read());
+    this.match.update(dtSec, this.humanInput);
     this.frameEvents = this.match.drainEvents();
     this.effects.handle(this.frameEvents);
 

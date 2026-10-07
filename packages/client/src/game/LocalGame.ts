@@ -9,6 +9,13 @@ import {
   type PlayerInput,
 } from '@bum/shared';
 
+/** Откъде LocalGame чете входа на човека (виж HumanInput). */
+export interface InputSource {
+  read(): PlayerInput;
+  /** Тикът е използвал натискането на суперсилата. */
+  consumeAbility(): void;
+}
+
 export interface LocalGameOptions {
   cfg: Balance;
   seed: number;
@@ -66,7 +73,7 @@ export class LocalGame {
   }
 
   /** Вика се всеки кадър с изминалото време в секунди. */
-  update(frameSec: number, humanInput: PlayerInput): void {
+  update(frameSec: number, input: InputSource): void {
     if (this.freezeLeft > 0) {
       this.freezeLeft -= frameSec;
       return;
@@ -75,7 +82,8 @@ export class LocalGame {
     this.accumulator += Math.min(frameSec, dt * LocalGame.MAX_TICKS_PER_FRAME);
 
     while (this.accumulator >= dt) {
-      const inputs = new Map<number, PlayerInput>([[this.humanId, humanInput]]);
+      const inputs = new Map<number, PlayerInput>([[this.humanId, input.read()]]);
+      input.consumeAbility();
       for (const bot of this.bots) inputs.set(bot.playerId, bot.think(this.world));
       this.world.step(inputs);
       this.pendingEvents.push(...this.world.events);
