@@ -11,13 +11,9 @@ import {
   type PlayerInput,
 } from '@bum/shared';
 import { SKINS } from './settings';
+import type { InputSource, Match } from './Match';
 
-/** Откъде LocalGame чете входа на човека (виж HumanInput). */
-export interface InputSource {
-  read(): PlayerInput;
-  /** Тикът е използвал натискането на суперсилата. */
-  consumeAbility(): void;
-}
+export type { InputSource } from './Match';
 
 export interface LocalGameOptions {
   cfg: Balance;
@@ -30,14 +26,23 @@ export interface LocalGameOptions {
 }
 
 /**
- * Локална игра (етап 1): светът се смята в браузъра.
- * В етап 3 това ще се замени от мрежов клиент, а World ще върви на сървъра –
- * затова сцената работи с LocalGame само през малък интерфейс.
+ * Локална игра („Тренировка“): светът се смята в браузъра, ботовете – също.
+ * Онлайн играта (NetGame) изпълнява същия интерфейс Match.
  *
  * Фиксирана стъпка: светът се смята точно tickRate пъти в секунда,
  * независимо от FPS. Рисуването интерполира между последните два тика (alpha).
  */
-export class LocalGame {
+export class LocalGame implements Match {
+  readonly online = false;
+  readonly isSpectator = false;
+  readonly roundId = 0;
+  readonly waiting = false;
+  readonly startsIn = null;
+  readonly roomId = null;
+  readonly isPrivate = false;
+  readonly ping = null;
+  readonly nextRoundIn = null;
+  readonly disconnected = null;
   readonly world: World;
   readonly humanId: number;
   readonly bots: BotBrain[] = [];
@@ -80,7 +85,7 @@ export class LocalGame {
     return Math.min(1, this.accumulator / this.world.dt);
   }
 
-  /** Hit-stop: светът спира за миг. (Онлайн ще спира само рисуването.) */
+  /** Hit-stop: светът спира за миг. */
   freeze(seconds: number): void {
     this.freezeLeft = Math.max(this.freezeLeft, seconds);
   }
@@ -109,5 +114,9 @@ export class LocalGame {
     const ev = this.pendingEvents;
     this.pendingEvents = [];
     return ev;
+  }
+
+  dispose(): void {
+    // Няма връзка за затваряне.
   }
 }
