@@ -1,0 +1,903 @@
+/*
+ * Главното меню (виж Menu.ts). Всички класове са с префикс bm- и са вътре в #bum-menu,
+ * за да не пипат нищо друго по страницата.
+ * Първо е подредбата за телефон (портрет); за широк екран – @media най-долу.
+ */
+
+#bum-menu {
+  --bm-bg: #1b1033;
+  --bm-ink: #2a1650;
+  --bm-card: rgba(255, 255, 255, 0.07);
+  --bm-card-line: rgba(255, 255, 255, 0.1);
+  --bm-muted: #c9b8f5;
+  --bm-yellow: #ffd23f;
+  --bm-yellow-edge: #d99a00;
+  --bm-pink: #ff5d73;
+  --bm-blue: #4dabf7;
+  --bm-green: #51cf66;
+  --bm-orange: #ff922b;
+  --bm-purple: #b197fc;
+  --bm-ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  overflow: hidden;
+  background: var(--bm-bg);
+  color: #fff;
+  font-family: 'Nunito', 'Trebuchet MS', 'Segoe UI', Arial, sans-serif;
+  font-weight: 800;
+  line-height: 1.25;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y;
+}
+#bum-menu.bm-hidden {
+  display: none;
+}
+/* Нулиране с :where() – нулева специфичност, за да не надвива класовете по-долу. */
+:where(#bum-menu) *,
+:where(#bum-menu) *::before,
+:where(#bum-menu) *::after {
+  box-sizing: border-box;
+}
+:where(#bum-menu) button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  margin: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+:where(#bum-menu) button:focus-visible,
+:where(#bum-menu) input:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+:where(#bum-menu) h1,
+:where(#bum-menu) h2,
+:where(#bum-menu) p {
+  margin: 0;
+}
+
+.bm-sprite {
+  flex: none;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* ---------- Фон ---------- */
+
+.bm-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 50% 0%, #34205f 0%, rgba(52, 32, 95, 0) 70%),
+    radial-gradient(90% 60% at 50% 100%, #2a1650 0%, rgba(42, 22, 80, 0) 70%);
+}
+.bm-blob {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  opacity: 0.32;
+  animation: bm-drift 18s ease-in-out infinite alternate;
+}
+.bm-blob-a {
+  left: -30vmax;
+  top: -25vmax;
+  background: radial-gradient(circle, #ff5d73 0%, rgba(255, 93, 115, 0) 65%);
+}
+.bm-blob-b {
+  right: -32vmax;
+  top: 20%;
+  background: radial-gradient(circle, #4dabf7 0%, rgba(77, 171, 247, 0) 65%);
+  animation-duration: 22s;
+  animation-direction: alternate-reverse;
+}
+.bm-blob-c {
+  left: -10vmax;
+  bottom: -40vmax;
+  background: radial-gradient(circle, #b197fc 0%, rgba(177, 151, 252, 0) 65%);
+  animation-duration: 26s;
+}
+.bm-dots {
+  position: absolute;
+  inset: -40px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 2px, transparent 2.5px);
+  background-size: 28px 28px;
+  animation: bm-dots 6s linear infinite;
+}
+.bm-floater {
+  position: absolute;
+  opacity: 0.2;
+  animation: bm-float 9s ease-in-out infinite;
+}
+
+/* ---------- Подредба ---------- */
+
+.bm-scroll {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0
+    max(16px, env(safe-area-inset-left));
+}
+.bm-layout {
+  width: 100%;
+  max-width: 480px;
+  min-height: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* На телефон колоните „изчезват“ и елементите се подреждат с order. */
+.bm-col {
+  display: contents;
+}
+.bm-hero {
+  order: 1;
+}
+.bm-name {
+  order: 2;
+}
+.bm-skins {
+  order: 3;
+}
+.bm-abilities {
+  order: 4;
+}
+.bm-play-wrap {
+  order: 5;
+}
+.bm-foot {
+  order: 6;
+}
+
+/* ---------- 1. Лого ---------- */
+
+.bm-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 4px;
+}
+.bm-hero-skin {
+  position: relative;
+  width: 88px;
+  height: 96px;
+  margin-bottom: -10px;
+  z-index: 1;
+}
+.bm-hero-skin .bm-sprite {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 4px 0 rgba(27, 16, 51, 0.5));
+  animation: bm-hop 1.6s var(--bm-ease-bounce) infinite;
+  transform-origin: 50% 100%;
+}
+.bm-hero-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 58px;
+  height: 10px;
+  margin-left: -29px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  animation: bm-hop-shadow 1.6s var(--bm-ease-bounce) infinite;
+}
+.bm-hero-skin.bm-pop {
+  animation: bm-pop 0.45s var(--bm-ease-bounce);
+}
+
+.bm-logo {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 0.22em;
+  font-size: clamp(40px, 12vw, 76px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  transform: rotate(-3deg);
+  padding: 0 0.1em 0.12em;
+}
+.bm-word {
+  display: inline-flex;
+}
+.bm-ch {
+  display: inline-block;
+  color: var(--bm-c, #fff);
+  -webkit-text-stroke: 0.14em var(--bm-ink);
+  paint-order: stroke fill;
+  text-shadow:
+    0 0.09em 0 var(--bm-ink),
+    0 0.16em 0 rgba(0, 0, 0, 0.28);
+  animation: bm-wave 2.6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.09s);
+}
+.bm-word-0 .bm-ch {
+  --bm-c: var(--bm-yellow);
+  font-size: 1.12em;
+}
+.bm-word-1 .bm-ch:nth-child(5n + 1) {
+  --bm-c: var(--bm-pink);
+}
+.bm-word-1 .bm-ch:nth-child(5n + 2) {
+  --bm-c: var(--bm-orange);
+}
+.bm-word-1 .bm-ch:nth-child(5n + 3) {
+  --bm-c: var(--bm-green);
+}
+.bm-word-1 .bm-ch:nth-child(5n + 4) {
+  --bm-c: var(--bm-blue);
+}
+.bm-word-1 .bm-ch:nth-child(5n + 5) {
+  --bm-c: var(--bm-purple);
+}
+.bm-tagline {
+  margin-top: 6px;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--bm-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ---------- Карти ---------- */
+
+.bm-card {
+  background: var(--bm-card);
+  border: 2px solid var(--bm-card-line);
+  border-radius: 22px;
+  padding: 12px 12px 14px;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(2px);
+  min-width: 0;
+}
+.bm-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+.bm-label {
+  display: block;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+}
+.bm-name .bm-label {
+  margin: 0 0 8px 4px;
+  color: var(--bm-muted);
+  font-size: 14px;
+}
+.bm-chip {
+  margin-left: auto;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(255, 210, 63, 0.16);
+  color: var(--bm-yellow);
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ---------- 2. Име ---------- */
+
+.bm-input {
+  display: block;
+  width: 100%;
+  height: 54px;
+  padding: 0 18px;
+  border: 3px solid transparent;
+  border-radius: 16px;
+  background: #fff;
+  color: var(--bm-ink);
+  font:
+    900 20px/1 'Nunito',
+    'Trebuchet MS',
+    sans-serif;
+  box-shadow:
+    inset 0 -4px 0 rgba(42, 22, 80, 0.12),
+    0 4px 0 rgba(0, 0, 0, 0.25);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: pan-y;
+  transition: border-color 0.15s;
+}
+.bm-input::placeholder {
+  color: #a596c9;
+  font-weight: 800;
+}
+.bm-input:focus,
+.bm-input:focus-visible {
+  border-color: var(--bm-yellow);
+  outline: none;
+}
+
+/* ---------- 3. Герои ---------- */
+
+/* Два реда, които се превъртат хоризонтално на телефон. */
+.bm-skin-row {
+  display: grid;
+  grid-template-rows: repeat(2, 58px);
+  grid-auto-flow: column;
+  grid-auto-columns: 58px;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 -12px;
+  padding: 8px 14px 12px;
+  scroll-snap-type: x proximity;
+  scroll-padding: 0 14px;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+}
+.bm-skin-row::-webkit-scrollbar {
+  display: none;
+}
+.bm-skin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--c) 45%, #2a1650);
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.18),
+    0 4px 0 rgba(0, 0, 0, 0.3);
+  scroll-snap-align: start;
+  transition:
+    transform 0.25s var(--bm-ease-bounce),
+    box-shadow 0.15s;
+}
+.bm-skin .bm-sprite {
+  transition: transform 0.25s var(--bm-ease-bounce);
+}
+.bm-skin:active {
+  transform: translateY(3px) scale(0.94);
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.18),
+    0 1px 0 rgba(0, 0, 0, 0.3);
+}
+.bm-skin.bm-on {
+  background: color-mix(in srgb, var(--c) 80%, #fff);
+  box-shadow:
+    0 0 0 3px var(--bm-ink),
+    0 0 0 6px var(--bm-yellow),
+    0 6px 0 3px rgba(0, 0, 0, 0.3);
+  transform: scale(1.06);
+  z-index: 1;
+}
+.bm-skin.bm-on .bm-sprite {
+  transform: scale(1.12) rotate(-6deg);
+}
+
+/* ---------- 4. Суперсили ---------- */
+
+.bm-ability-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.bm-ability {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 44px 8px 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  text-align: left;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.06),
+    0 4px 0 rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.25s var(--bm-ease-bounce),
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+.bm-ability:active {
+  transform: translateY(3px) scale(0.98);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.06),
+    0 1px 0 rgba(0, 0, 0, 0.28);
+}
+.bm-ability-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 15px;
+  background: var(--c);
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.2),
+    inset 0 3px 0 rgba(255, 255, 255, 0.35);
+}
+.bm-ability-text {
+  min-width: 0;
+}
+.bm-ability-name {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+.bm-ability-desc {
+  margin-top: 2px;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--bm-muted);
+  text-wrap: pretty;
+}
+.bm-check {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  color: transparent;
+  font-size: 15px;
+  font-weight: 900;
+  transition:
+    transform 0.25s var(--bm-ease-bounce),
+    background-color 0.15s;
+}
+.bm-ability.bm-on {
+  background: color-mix(in srgb, var(--c) 30%, #2a1650);
+  box-shadow:
+    inset 0 0 0 3px var(--c),
+    0 4px 0 rgba(0, 0, 0, 0.3);
+}
+.bm-ability.bm-on .bm-ability-desc {
+  color: #fff;
+}
+.bm-ability.bm-on .bm-check {
+  border-color: var(--bm-ink);
+  background: var(--bm-yellow);
+  color: var(--bm-ink);
+  transform: scale(1.15);
+}
+.bm-ability.bm-pop {
+  animation: bm-pop-small 0.4s var(--bm-ease-bounce);
+}
+
+/* ---------- 5. ИГРАЙ ---------- */
+
+/* На телефон бутонът е залепен за долния ръб, за да е винаги под палеца. */
+.bm-play-wrap {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0 -16px;
+  padding: 18px 16px max(12px, env(safe-area-inset-bottom));
+}
+/* Затъмняващата лента под бутона е през целия екран, не само в колоната. */
+.bm-play-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 50vw);
+  right: calc(50% - 50vw);
+  z-index: -1;
+  background: linear-gradient(to top, var(--bm-bg) 55%, rgba(27, 16, 51, 0));
+  pointer-events: none;
+}
+.bm-play {
+  display: block;
+  width: 100%;
+  height: 76px;
+  border-radius: 26px;
+  background: linear-gradient(to bottom, #ffe066 0%, var(--bm-yellow) 55%, #ffc61a 100%);
+  color: var(--bm-ink);
+  font-size: 36px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -5px 0 rgba(0, 0, 0, 0.1),
+    0 8px 0 var(--bm-yellow-edge),
+    0 14px 24px rgba(0, 0, 0, 0.4);
+  animation: bm-pulse 1.6s ease-in-out infinite;
+  transition:
+    transform 0.2s var(--bm-ease-bounce),
+    box-shadow 0.12s;
+}
+.bm-play-text {
+  display: inline-block;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.5);
+}
+.bm-play:active {
+  animation: none;
+  transform: translateY(7px) scale(0.98);
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -5px 0 rgba(0, 0, 0, 0.1),
+    0 1px 0 var(--bm-yellow-edge),
+    0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- 6. Долу ---------- */
+
+.bm-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.bm-foot-btns {
+  display: flex;
+  gap: 12px;
+}
+.bm-round {
+  display: grid;
+  place-items: center;
+  min-width: 52px;
+  height: 48px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: #6b5a8e;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.2),
+    0 5px 0 #46386a;
+  transition:
+    transform 0.2s var(--bm-ease-bounce),
+    box-shadow 0.12s,
+    background-color 0.15s;
+}
+.bm-round:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.2),
+    0 1px 0 #46386a;
+}
+.bm-round svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+.bm-sound.bm-muted {
+  background: #8a4a6e;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.2),
+    0 5px 0 #5e2f4a;
+}
+.bm-hint {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(201, 184, 245, 0.75);
+  text-align: center;
+}
+
+/* ---------- Мишка: подскок при посочване ---------- */
+
+@media (hover: hover) {
+  .bm-skin:hover:not(.bm-on) {
+    transform: translateY(-3px) scale(1.06);
+  }
+  .bm-skin:hover .bm-sprite {
+    transform: scale(1.12) rotate(6deg);
+  }
+  .bm-ability:hover:not(.bm-on) {
+    background: rgba(255, 255, 255, 0.13);
+    transform: translateY(-2px);
+  }
+  .bm-play:hover {
+    animation: none;
+    transform: translateY(-2px) scale(1.04);
+  }
+  .bm-round:hover {
+    background: #7d6aa3;
+    transform: translateY(-2px);
+  }
+  .bm-sound.bm-muted:hover {
+    background: #9c5680;
+  }
+  .bm-skin:active,
+  .bm-skin:active:hover {
+    transform: translateY(3px) scale(0.94);
+  }
+  .bm-play:active:hover {
+    transform: translateY(7px) scale(0.98);
+  }
+  .bm-round:active:hover {
+    transform: translateY(4px);
+  }
+}
+
+/* ---------- Нисък телефон (напр. 360×640): по-компактно горе ---------- */
+
+@media (max-width: 899px) and (max-height: 700px) {
+  .bm-layout {
+    gap: 12px;
+  }
+  /* scale (а не transform), за да не се бие с анимацията „bm-pop“. */
+  .bm-hero-skin {
+    scale: 0.8;
+    margin: -10px 0 -19px;
+  }
+  .bm-logo {
+    font-size: clamp(38px, 11.5vw, 60px);
+  }
+  .bm-tagline {
+    margin-top: 2px;
+    font-size: 15px;
+  }
+  .bm-card {
+    padding: 10px 12px 12px;
+  }
+  .bm-name .bm-label {
+    margin-bottom: 6px;
+  }
+  .bm-input {
+    height: 50px;
+  }
+  .bm-play {
+    height: 68px;
+  }
+  .bm-play-wrap {
+    padding-top: 14px;
+  }
+}
+
+/* ---------- Широк екран (компютър, таблет хоризонтално): две колони ---------- */
+
+@media (min-width: 900px) and (min-height: 520px) {
+  .bm-scroll {
+    display: flex;
+    padding-top: max(24px, env(safe-area-inset-top));
+  }
+  .bm-layout {
+    max-width: 1120px;
+    margin: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 40px;
+  }
+  .bm-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+  }
+  .bm-col-left {
+    flex: 0 1 430px;
+  }
+  .bm-col-right {
+    flex: 1 1 600px;
+  }
+  .bm-hero-skin {
+    scale: 1.15;
+    margin-bottom: -4px;
+  }
+  .bm-logo {
+    font-size: 76px;
+  }
+  .bm-tagline {
+    font-size: 19px;
+  }
+  .bm-play-wrap {
+    position: static;
+    margin: 0;
+    padding: 6px 0 4px;
+  }
+  .bm-play-wrap::before {
+    display: none;
+  }
+  .bm-play {
+    height: 84px;
+    font-size: 40px;
+  }
+  .bm-foot {
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+  /* Всичките 20 героя се виждат: 10 × 2 без превъртане. */
+  .bm-skin-row {
+    grid-template-rows: repeat(2, 1fr);
+    grid-template-columns: repeat(10, 1fr);
+    grid-auto-flow: row;
+    overflow: visible;
+    margin: 0;
+    padding: 4px 2px 8px;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .bm-skin {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .bm-card {
+    padding: 14px 16px 16px;
+  }
+  .bm-ability {
+    min-height: 60px;
+  }
+  .bm-ability-desc {
+    font-size: 14px;
+  }
+}
+
+/* Нисък широк екран (лаптоп 1024×600 и т.н.): логото на един ред, по-плътни редове. */
+@media (min-width: 900px) and (min-height: 520px) and (max-height: 660px) {
+  .bm-logo {
+    font-size: 58px;
+  }
+  .bm-hero-skin {
+    scale: 1;
+  }
+  .bm-col {
+    gap: 12px;
+  }
+  .bm-card-head {
+    margin-bottom: 8px;
+  }
+  .bm-ability-list {
+    gap: 7px;
+  }
+  .bm-ability {
+    min-height: 54px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .bm-ability-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .bm-play {
+    height: 74px;
+  }
+}
+
+/* Телефон хоризонтално: по-нисък залепен бутон, за да остане място за менюто. */
+@media (max-width: 899px) and (max-height: 460px) {
+  .bm-play {
+    height: 58px;
+    font-size: 30px;
+    border-radius: 22px;
+  }
+  .bm-play-wrap {
+    padding-top: 10px;
+  }
+}
+
+/* ---------- Анимации ---------- */
+
+@keyframes bm-wave {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  20% {
+    transform: translateY(-0.12em) rotate(-4deg);
+  }
+  40% {
+    transform: translateY(0.02em) rotate(2deg);
+  }
+}
+@keyframes bm-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.08, 0.92);
+  }
+  12% {
+    transform: translateY(0) scale(1, 1);
+  }
+  45% {
+    transform: translateY(-16px) scale(0.96, 1.05) rotate(-4deg);
+  }
+  80% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+@keyframes bm-hop-shadow {
+  0%,
+  12%,
+  80%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(0.65);
+    opacity: 0.5;
+  }
+}
+@keyframes bm-pop {
+  0% {
+    transform: scale(0.6) rotate(-10deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+@keyframes bm-pop-small {
+  0% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes bm-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+@keyframes bm-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(8vmax, 6vmax) scale(1.15);
+  }
+}
+@keyframes bm-dots {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(28px, 28px);
+  }
+}
+@keyframes bm-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg);
+  }
+  50% {
+    transform: translateY(-18px) rotate(8deg);
+  }
+}
+
+/* Без излишно движение, ако потребителят го е поискал в системата. */
+@media (prefers-reduced-motion: reduce) {
+  #bum-menu *,
+  #bum-menu *::before,
+  #bum-menu *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
