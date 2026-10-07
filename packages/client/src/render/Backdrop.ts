@@ -36,8 +36,13 @@ export class Backdrop {
     const cam = this.scene.cameras.main;
     const { width, height } = this.scene.scale;
     // Phaser отчита зуума: TileSprite с scrollFactor 0 трябва да покрива целия екран.
-    this.stars.setSize(width / cam.zoom + 4, height / cam.zoom + 4);
-    this.stars.setPosition((width - width / cam.zoom) / 2 - 2, (height - height / cam.zoom) / 2 - 2);
+    // Размерът се сменя само при нужда – иначе текстурата се прерисува всеки кадър.
+    const w = Math.ceil(width / cam.zoom + 4);
+    const h = Math.ceil(height / cam.zoom + 4);
+    if (this.stars.width < w || this.stars.height < h || this.stars.width > w + 64 || this.stars.height > h + 64) {
+      this.stars.setSize(w + 32, h + 32);
+    }
+    this.stars.setPosition((width - this.stars.width) / 2, (height - this.stars.height) / 2);
     this.stars.tilePositionX = cam.scrollX * 0.15 + this.time * 6;
     this.stars.tilePositionY = cam.scrollY * 0.15;
     this.clouds.forEach((c, i) => (c.x += dtSec * (8 + i * 2)));

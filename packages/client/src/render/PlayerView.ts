@@ -214,6 +214,14 @@ export class PlayerView {
   private drawFx(p: Player, cfg: Balance, r: number): void {
     const g = this.fx;
     g.clear();
+    // Празна графика пак струва нещо при рисуване – крием я, когато няма ефекти.
+    const any =
+      (this.isMe && !p.inCar) ||
+      p.immune ||
+      p.inCar ||
+      (!p.inCar && p.abilityTime > 0 && (p.ability === 'magnet' || p.ability === 'giant'));
+    g.setVisible(any);
+    if (!any) return;
     if (this.isMe && !p.inCar) {
       g.lineStyle(4, 0xffd23f, 0.85);
       g.strokeEllipse(0, r * 0.72, r * 2.2, r * 0.8);
