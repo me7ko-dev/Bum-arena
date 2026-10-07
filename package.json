@@ -1,0 +1,33 @@
+{
+  "name": "bum-arena",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "БУМ Арена – мултиплейър .io парти игра",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @bum/client",
+    "build": "npm run build -w @bum/client",
+    "preview": "npm run preview -w @bum/client",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^7.3.7",
+    "vitest": "^5.0.3"
+  }
+}
