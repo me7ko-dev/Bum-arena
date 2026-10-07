@@ -34,6 +34,11 @@ const ABILITIES: Record<AbilityId, AbilityDef> = {
       world.events.push({ type: 'ability', playerId: p.id, ability: 'dash', x: p.x, y: p.y, dirX, dirY });
     },
   },
+  // Временни заготовки – реалната логика идва в следващия commit.
+  magnet: { cooldown: (cfg) => cfg.abilities.dash.cooldown, activate() {} },
+  giant: { cooldown: (cfg) => cfg.abilities.dash.cooldown, activate() {} },
+  freeze: { cooldown: (cfg) => cfg.abilities.dash.cooldown, activate() {} },
+  shield: { cooldown: (cfg) => cfg.abilities.dash.cooldown, activate() {} },
 };
 
 /** Обработва натискането на бутона за суперсила (веднъж на тик, преди движението). */
