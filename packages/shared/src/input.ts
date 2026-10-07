@@ -1,3 +1,5 @@
+import { SHOP_ITEM_IDS, type ShopItemId } from './sim/types';
+
 /**
  * Вход на един играч за един тик.
  *
@@ -9,8 +11,10 @@ export interface PlayerInput {
   mx: number;
   /** Посока на движение, Y (-1..1). Положително е надолу. */
   my: number;
-  /** Задържан ли е бутонът за суперсила. */
+  /** Задържан ли е бутонът за суперсила (в кола – слизане от колата). */
   ability: boolean;
+  /** Покупка от магазина този тик (по желание). */
+  buy?: ShopItemId | null;
 }
 
 export const NO_INPUT: Readonly<PlayerInput> = Object.freeze({ mx: 0, my: 0, ability: false });
@@ -24,5 +28,6 @@ export function sanitizeInput(input: PlayerInput): PlayerInput {
     mx /= l;
     my /= l;
   }
-  return { mx, my, ability: !!input.ability };
+  const buy = input.buy && SHOP_ITEM_IDS.includes(input.buy) ? input.buy : null;
+  return { mx, my, ability: !!input.ability, buy };
 }

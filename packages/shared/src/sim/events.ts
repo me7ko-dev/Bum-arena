@@ -1,4 +1,4 @@
-import type { AbilityId, EndReason } from './types';
+import type { AbilityId, EndReason, ShopItemId } from './types';
 
 /**
  * Събития, които симулацията изпраща навън за всеки тик.
@@ -28,7 +28,17 @@ export type GameEvent =
       /** Посока (единичен вектор), ако суперсилата има такава. */
       dirX: number;
       dirY: number;
+      /** Засегнатите играчи (замразяване, щит). */
+      targets?: number[];
     }
+  | { type: 'carSpawn'; carId: number; x: number; y: number }
+  | { type: 'carEnter'; playerId: number; x: number; y: number }
+  | { type: 'carExit'; playerId: number; x: number; y: number }
+  | { type: 'carWreck'; playerId: number; x: number; y: number }
+  | { type: 'buy'; playerId: number; item: ShopItemId }
+  /** Короната смени собственика (-1 = никой). */
+  | { type: 'crown'; playerId: number }
+  | { type: 'bounty'; playerId: number; victimId: number; coins: number }
   | {
       type: 'coinPickup';
       playerId: number;

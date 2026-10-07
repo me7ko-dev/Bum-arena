@@ -1,4 +1,5 @@
 import { clamp } from '../math/vec';
+import { damageCar } from './cars';
 import type { World } from './world';
 import type { Player } from './types';
 
@@ -62,11 +63,20 @@ export function resolvePlayerCollisions(world: World): void {
 
       if (closing < hc.minSpeed) continue; // просто допир
 
-      // 2) Геймплей бонус: всеки бута другия със собствената си скорост към него.
+      // 2) Геймплей бонус: всеки бута другия със собствената си скорост към него,
+      //    умножена по силата на удара (кола, мега удар). Щитът отразява бутането.
       const aApproach = Math.max(0, a.vx * nx + a.vy * ny + impulse * invA); // скоростта на a преди импулса
       const bApproach = Math.max(0, -(b.vx * nx + b.vy * ny) + impulse * invB);
-      const bonusToB = hc.knockbackBonus * aApproach * (a.mass / b.mass);
-      const bonusToA = hc.knockbackBonus * bApproach * (b.mass / a.mass);
+      let bonusToB = hc.knockbackBonus * aApproach * a.hitPower * (a.mass / b.mass);
+      let bonusToA = hc.knockbackBonus * bApproach * b.hitPower * (b.mass / a.mass);
+      if (b.immune) {
+        bonusToA += bonusToB * 0.8;
+        bonusToB = 0;
+      }
+      if (a.immune) {
+        bonusToB += bonusToA * 0.8;
+        bonusToA = 0;
+      }
       b.vx += nx * bonusToB;
       b.vy += ny * bonusToB;
       a.vx -= nx * bonusToA;
@@ -75,11 +85,17 @@ export function resolvePlayerCollisions(world: World): void {
       const strength = clamp((closing - hc.minSpeed) / (hc.strongSpeed - hc.minSpeed), 0, 1);
       const attacker = aApproach >= bApproach ? a : b;
       const victim = attacker === a ? b : a;
+      const power = Math.min(1, strength * attacker.hitPower);
 
-      registerHit(world, attacker, victim, strength);
+      registerHit(world, attacker, victim, power);
       // Ако и двамата са се засилили, и „атакуващият“ отнася малко.
       const otherApproach = attacker === a ? bApproach : aApproach;
       if (otherApproach > hc.minSpeed) registerHit(world, victim, attacker, strength * 0.5, false);
+
+      // Колите поемат щети, мега ударът се изразходва.
+      damageCar(world, a, strength);
+      damageCar(world, b, strength);
+      if (attacker.buffMega > 0 && strength > 0.15) attacker.buffMega = 0;
 
       world.events.push({
         type: 'hit',
@@ -87,7 +103,7 @@ export function resolvePlayerCollisions(world: World): void {
         victimId: victim.id,
         x: a.x + nx * a.radius,
         y: a.y + ny * a.radius,
-        strength,
+        strength: power,
       });
     }
   }
@@ -98,6 +114,7 @@ function registerHit(world: World, attacker: Player, victim: Player, strength: n
   const hc = world.cfg.hit;
   victim.lastHitBy = attacker.id;
   victim.lastHitTick = world.tick;
+  if (victim.immune) return;
   if (stun && strength >= hc.stunThreshold) {
     const t = hc.stunMin + (hc.stunMax - hc.stunMin) * strength;
     victim.stun = Math.max(victim.stun, t);

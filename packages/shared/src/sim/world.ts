@@ -1,14 +1,17 @@
 import { BALANCE, type Balance } from '../config/balance';
 import { NO_INPUT, sanitizeInput, type PlayerInput } from '../input';
 import { Rng } from '../math/rng';
-import { currentMass, handleAbilityInput, keepsMomentum, updateAbilities } from './abilities';
+import { handleAbilityInput, keepsMomentum, updateAbilities } from './abilities';
 import { updateArena } from './arena';
+import { CarSystem } from './cars';
 import { CoinSystem } from './coins';
 import { resolvePlayerCollisions } from './collisions';
 import type { GameEvent } from './events';
 import { applyMovement } from './movement';
 import { checkRoundEnd } from './round';
-import type { Arena, Coin, Player, RoundState } from './types';
+import { tryBuy } from './shop';
+import { updateStats } from './stats';
+import type { AbilityId, Arena, Car, Coin, Player, RoundState } from './types';
 
 export interface WorldOptions {
   seed?: number;
@@ -22,6 +25,9 @@ export interface AddPlayerOptions {
   name: string;
   isBot?: boolean;
   colorIndex?: number;
+  /** Визуален скин (кадър от атласа на клиента). */
+  skin?: string;
+  ability?: AbilityId;
 }
 
 /**
@@ -39,6 +45,9 @@ export class World {
   readonly arena: Arena;
   readonly players: Player[] = [];
   readonly coinSystem: CoinSystem;
+  readonly carSystem: CarSystem;
+  /** Кой носи короната (-1 = никой). */
+  crownId = -1;
   readonly round: RoundState;
   /** Събитията от последния step(). Изчистват се в началото на всеки тик. */
   readonly events: GameEvent[] = [];
@@ -65,6 +74,12 @@ export class World {
     };
     this.coinSystem = new CoinSystem(this);
     this.coinSystem.spawnInitial();
+    this.carSystem = new CarSystem(this);
+  }
+
+  /** Паркираните коли на картата. */
+  get cars(): readonly Car[] {
+    return this.carSystem.cars;
   }
 
   /** Монетите на картата. */
@@ -93,6 +108,7 @@ export class World {
       name: opts.name,
       isBot: opts.isBot ?? false,
       colorIndex: opts.colorIndex ?? index,
+      skin: opts.skin ?? '',
       x,
       y,
       prevX: x,
@@ -102,6 +118,10 @@ export class World {
       facing: 0,
       radius: pc.radius,
       mass: pc.mass,
+      maxSpeed: pc.maxSpeed,
+      accel: pc.accel,
+      hitPower: 1,
+      immune: false,
       alive: true,
       eliminatedTick: -1,
       fallTime: 0,
@@ -110,10 +130,19 @@ export class World {
       lastHitTick: -1,
       knockouts: 0,
       coins: 0,
-      ability: 'dash',
+      ability: opts.ability ?? 'dash',
       abilityCooldown: 0,
       abilityTime: 0,
       abilityHeld: false,
+      frozen: 0,
+      buffSize: 0,
+      buffSpeed: 0,
+      buffShield: 0,
+      buffMega: 0,
+      inCar: false,
+      carHp: 0,
+      carKind: 0,
+      carCooldown: 0,
     };
     this.players.push(p);
     this.layoutSpawns();
@@ -162,8 +191,9 @@ export class World {
     for (const p of this.players) {
       const input = sanitizeInput(inputs.get(p.id) ?? NO_INPUT);
       tickInputs.set(p.id, input);
+      if (input.buy) tryBuy(this, p, input.buy);
       handleAbilityInput(this, p, input, this.canControl(p));
-      p.mass = currentMass(this.cfg, p);
+      updateStats(this.cfg, p);
     }
 
     for (let s = 0; s < substeps; s++) {
@@ -175,7 +205,9 @@ export class World {
       this.checkFalls();
     }
 
-    this.coinSystem.update(this.dt, this.round.phase === 'playing');
+    const playing = this.round.phase === 'playing';
+    this.coinSystem.update(this.dt, playing);
+    if (playing) this.carSystem.update(this.dt);
     this.updateTimers(this.dt);
     this.updateRound();
     this.tick++;
@@ -208,20 +240,28 @@ export class World {
     if (r.phase === 'playing') {
       r.timeLeft = Math.max(0, this.cfg.round.duration - r.phaseTime);
       updateArena(this, r.phaseTime, prev);
+      this.updateCrown();
       checkRoundEnd(this);
     }
   }
 
-  /** Може ли играчът да управлява (жив, не е замаян и рундът не е в отброяване). */
+  /** Може ли играчът да управлява (жив, не е замаян/замразен и рундът не е в отброяване). */
   canControl(p: Player): boolean {
-    return p.alive && p.stun <= 0 && this.round.phase !== 'countdown';
+    return p.alive && p.stun <= 0 && p.frozen <= 0 && this.round.phase !== 'countdown';
   }
 
   /** Таймери на играчите (замайване, суперсили, анимация на падане). */
   private updateTimers(dt: number): void {
     for (const p of this.players) {
       if (p.stun > 0) p.stun = Math.max(0, p.stun - dt);
+      if (p.frozen > 0) p.frozen = Math.max(0, p.frozen - dt);
+      if (p.buffSize > 0) p.buffSize = Math.max(0, p.buffSize - dt);
+      if (p.buffSpeed > 0) p.buffSpeed = Math.max(0, p.buffSpeed - dt);
+      if (p.buffShield > 0) p.buffShield = Math.max(0, p.buffShield - dt);
+      if (p.buffMega > 0) p.buffMega = Math.max(0, p.buffMega - dt);
+      if (p.carCooldown > 0) p.carCooldown = Math.max(0, p.carCooldown - dt);
       updateAbilities(this, p, dt);
+      updateStats(this.cfg, p);
       if (!p.alive) p.fallTime += dt;
     }
   }
@@ -251,12 +291,33 @@ export class World {
     }
   }
 
+  /**
+   * Короната: живият с най-много избутвания (поне minKnockouts).
+   * При равенство остава у досегашния – иначе би „прескачала“ постоянно.
+   */
+  private updateCrown(): void {
+    const min = this.cfg.crown.minKnockouts;
+    const holder = this.crownId >= 0 ? this.getPlayer(this.crownId) : undefined;
+    let best = holder?.alive && holder.knockouts >= min ? holder : undefined;
+    for (const p of this.players) {
+      if (!p.alive || p.knockouts < min) continue;
+      if (!best || p.knockouts > best.knockouts) best = p;
+    }
+    const id = best?.id ?? -1;
+    if (id !== this.crownId) {
+      this.crownId = id;
+      this.events.push({ type: 'crown', playerId: id });
+    }
+  }
+
   private eliminate(p: Player): void {
     p.alive = false;
     p.eliminatedTick = this.tick;
     p.fallTime = 0;
     p.stun = 0;
+    p.frozen = 0;
     p.abilityTime = 0;
+    p.inCar = false;
 
     // Кредит за избутване: ако някой го е ударил наскоро.
     let byId: number | null = null;
@@ -266,6 +327,11 @@ export class World {
       if (by) {
         by.knockouts++;
         byId = by.id;
+        // Награда за свалена корона.
+        if (p.id === this.crownId && by.alive) {
+          by.coins += this.cfg.crown.bounty;
+          this.events.push({ type: 'bounty', playerId: by.id, victimId: p.id, coins: this.cfg.crown.bounty });
+        }
       }
     }
     this.events.push({ type: 'fall', playerId: p.id, byId, x: p.x, y: p.y });

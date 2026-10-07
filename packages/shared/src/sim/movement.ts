@@ -19,7 +19,10 @@ export function applyMovement(
   dt: number,
 ): void {
   const pc = cfg.player;
-  const maxSpeed = pc.maxSpeed;
+  const maxSpeed = p.maxSpeed;
+  const accel = p.accel;
+  // Замразените се пързалят като по лед.
+  const dragK = pc.knockbackDrag * (p.frozen > 0 ? cfg.abilities.freeze.slideDrag : 1);
   const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
 
   const mx = canControl ? input.mx : 0;
@@ -37,11 +40,11 @@ export function applyMovement(
 
   if (speed > maxSpeed * 1.02 || !canControl) {
     // „Летене“: експоненциално затихване + малко управление.
-    const drag = Math.exp(-pc.knockbackDrag * dt);
+    const drag = Math.exp(-dragK * dt);
     p.vx *= drag;
     p.vy *= drag;
-    p.vx += mx * pc.accel * pc.airControl * dt;
-    p.vy += my * pc.accel * pc.airControl * dt;
+    p.vx += mx * accel * pc.airControl * dt;
+    p.vy += my * accel * pc.airControl * dt;
   } else {
     // Нормално ходене: приближаваме скоростта към желаната.
     const tx = mx * maxSpeed;
@@ -49,7 +52,7 @@ export function applyMovement(
     let dvx = tx - p.vx;
     let dvy = ty - p.vy;
     const dvLen = Math.sqrt(dvx * dvx + dvy * dvy);
-    const maxDv = (inputLen > 0.1 ? pc.accel : pc.stopDecel) * dt;
+    const maxDv = (inputLen > 0.1 ? accel : pc.stopDecel) * dt;
     if (dvLen > maxDv) {
       dvx = (dvx / dvLen) * maxDv;
       dvy = (dvy / dvLen) * maxDv;

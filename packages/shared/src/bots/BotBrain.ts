@@ -1,7 +1,7 @@
 import type { Balance } from '../config/balance';
 import type { PlayerInput } from '../input';
 import { Rng } from '../math/rng';
-import type { Player } from '../sim/types';
+import { SHOP_ITEM_IDS, type Player, type ShopItemId } from '../sim/types';
 import type { World } from '../sim/world';
 
 export type BotDifficulty = 'easy' | 'normal' | 'hard';
@@ -11,6 +11,7 @@ type BotProfile = Balance['bots']['easy'];
 type Goal =
   | { kind: 'coin'; id: number }
   | { kind: 'attack'; id: number }
+  | { kind: 'car'; id: number }
   | { kind: 'wander'; x: number; y: number }
   | { kind: 'retreat' };
 
@@ -66,6 +67,9 @@ export class BotBrain {
     }
 
     let [mx, my, wantDash] = this.steer(world, me, prof);
+    // Суперсилите, различни от дъш, имат собствена логика кога да се ползват.
+    if (me.ability !== 'dash') wantDash = this.wantsAbility(world, me, prof);
+    if (me.inCar) wantDash = false; // в колата бутонът е „слез“ – ботът не слиза
 
     // ── Рефлекс 1: пази се от ръба ──
     const safeR = effectiveRadius(world);
@@ -80,7 +84,8 @@ export class BotBrain {
 
       // ── Рефлекс 2: спасителен дъш, ако лети навън ──
       const outSpeed = -(me.vx * inX + me.vy * inY);
-      if (outSpeed > world.cfg.player.maxSpeed && toEdge < prof.edgeMargin * 0.8 && me.abilityCooldown <= 0) {
+      const canRecover = me.ability === 'dash' && !me.inCar;
+      if (canRecover && outSpeed > world.cfg.player.maxSpeed && toEdge < prof.edgeMargin * 0.8 && me.abilityCooldown <= 0) {
         if (this.rng.chance(prof.recoverDash * 0.5)) {
           mx = inX;
           my = inY;
@@ -88,7 +93,7 @@ export class BotBrain {
         }
       }
       // Не дъшвай към ръба при нападение.
-      if (wantDash && mx * inX + my * inY < 0) wantDash = false;
+      if (wantDash && me.ability === 'dash' && mx * inX + my * inY < 0) wantDash = false;
     }
 
     // ── Рефлекс 3: избягване на засилил се противник ──
@@ -106,10 +111,46 @@ export class BotBrain {
       }
       mx = px;
       my = py;
-      if (this.difficulty === 'hard' && me.abilityCooldown <= 0 && this.rng.chance(0.5)) wantDash = true;
+      const escape = me.ability === 'dash' || me.ability === 'shield' || me.ability === 'freeze';
+      if (this.difficulty !== 'easy' && escape && !me.inCar && me.abilityCooldown <= 0 && this.rng.chance(0.5)) {
+        wantDash = true;
+      }
     }
 
-    return this.output(mx, my, wantDash, world.dt);
+    const out = this.output(mx, my, wantDash, world.dt);
+    out.buy = this.pickPurchase(world, me);
+    return out;
+  }
+
+  /** Кога да ползва магнит / гигант / замразяване / щит. */
+  private wantsAbility(world: World, me: Player, prof: BotProfile): boolean {
+    if (me.abilityCooldown > 0 || me.inCar || !this.dashArmed) return false;
+    const ac = world.cfg.abilities;
+    const enemiesWithin = (r: number) =>
+      world.players.filter((o) => o !== me && o.alive && Math.hypot(o.x - me.x, o.y - me.y) < r + o.radius).length;
+    switch (me.ability) {
+      case 'magnet': {
+        let coins = 0;
+        for (const c of world.coins) if (Math.hypot(c.x - me.x, c.y - me.y) < ac.magnet.radius) coins += c.value;
+        return coins >= 4;
+      }
+      case 'giant':
+        return this.goal.kind === 'attack' && enemiesWithin(prof.dashRange) > 0;
+      case 'freeze':
+        return enemiesWithin(ac.freeze.radius * 0.8) >= (this.difficulty === 'hard' ? 1 : 2);
+      case 'shield':
+        return enemiesWithin(ac.shield.radius * 0.7) >= 1;
+      default:
+        return false;
+    }
+  }
+
+  /** Понякога купува нещо от магазина, когато има достатъчно монети. */
+  private pickPurchase(world: World, me: Player): ShopItemId | null {
+    if (me.coins < 8 || !this.rng.chance(0.01)) return null;
+    const affordable = SHOP_ITEM_IDS.filter((id) => world.cfg.shop[id].price <= me.coins);
+    if (affordable.length === 0) return null;
+    return this.rng.pick(affordable);
   }
 
   /** Плавно завъртане към желаната посока + натискане на бутона само за един тик. */
@@ -157,12 +198,27 @@ export class BotBrain {
       const tEdge = safeR - Math.hypot(t.x - ax, t.y - ay);
       const nearEdge = 1 - Math.min(1, Math.max(0, tEdge) / 400);
       let score = aggression * (1 - d / prof.sight) * (1 + 1.5 * nearEdge);
-      if (t.stun > 0) score *= 1.4;
+      if (t.stun > 0 || t.frozen > 0) score *= 1.4;
+      if (t.id === world.crownId) score *= 1.5; // короната е мишена
+      if (t.inCar && !me.inCar) score *= 0.4; // кола не се бута лесно
       score *= 1 + Math.min(t.coins, 30) * 0.02;
       if (myDist > safeR * 0.8) score *= 0.5; // самият аз съм близо до ръба
       if (score > bestScore) {
         bestScore = score;
         best = { kind: 'attack', id: t.id };
+      }
+    }
+
+    // Свободна кола наблизо – много изкушаващо.
+    if (!me.inCar && me.carCooldown <= 0) {
+      for (const car of world.cars) {
+        const d = Math.hypot(car.x - me.x, car.y - me.y);
+        if (d > prof.sight) continue;
+        const score = 1.3 * (1 - d / prof.sight) + 0.3;
+        if (score > bestScore) {
+          bestScore = score;
+          best = { kind: 'car', id: car.id };
+        }
       }
     }
 
@@ -204,6 +260,15 @@ export class BotBrain {
       return [dx, dy, false];
     }
 
+    if (g.kind === 'car') {
+      const car = world.cars.find((k) => k.id === g.id);
+      if (!car || me.inCar) {
+        this.thinkTimer = 0;
+        return [this.dirX, this.dirY, false];
+      }
+      return [car.x - me.x, car.y - me.y, false];
+    }
+
     if (g.kind === 'coin') {
       const c = world.coins.find((k) => k.id === g.id);
       if (!c) {
@@ -238,7 +303,12 @@ export class BotBrain {
       dx = Math.cos(ang) * l;
       dy = Math.sin(ang) * l;
       const wantDash =
-        this.dashArmed && align > 0.75 && d < prof.dashRange && me.abilityCooldown <= 0 && t.stun <= 0.4;
+        me.ability === 'dash' &&
+        this.dashArmed &&
+        align > 0.75 &&
+        d < prof.dashRange &&
+        me.abilityCooldown <= 0 &&
+        t.stun <= 0.4;
       return [dx, dy, wantDash];
     }
 

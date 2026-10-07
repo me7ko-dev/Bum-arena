@@ -2,7 +2,7 @@
  * Симулира рундове само с ботове и печата статистика – за настройка на баланса без браузър.
  *   npx tsx scripts/sim-bots.ts [брой рундове] [брой ботове]
  */
-import { BotBrain, World, cloneBalance, pickDifficulty, type PlayerInput } from '../packages/shared/src/index';
+import { ABILITY_IDS, BotBrain, World, cloneBalance, pickDifficulty, type PlayerInput } from '../packages/shared/src/index';
 
 const rounds = Number(process.argv[2] ?? 5);
 const botCount = Number(process.argv[3] ?? 12);
@@ -13,13 +13,14 @@ for (let r = 0; r < rounds; r++) {
   const w = new World({ cfg, seed });
   const brains = new Map<number, BotBrain>();
   for (let i = 0; i < botCount; i++) {
-    const p = w.addPlayer({ name: `B${i}`, isBot: true });
+    const p = w.addPlayer({ name: `B${i}`, isBot: true, ability: ABILITY_IDS[i % ABILITY_IDS.length] });
     brains.set(p.id, new BotBrain(p.id, pickDifficulty(cfg, w.rng), seed * 100 + i));
   }
   const falls: string[] = [];
   let endTime = 0;
   let hits = 0;
   let dashes = 0;
+  const stats: Record<string, number> = {};
   const maxTicks = (cfg.round.countdown + cfg.round.duration + 1) * cfg.sim.tickRate;
   for (let i = 0; i < maxTicks && w.round.phase !== 'ended'; i++) {
     const inputs = new Map<number, PlayerInput>();
@@ -29,6 +30,8 @@ for (let r = 0; r < rounds; r++) {
     for (const e of w.events) {
       if (e.type === 'hit') hits++;
       if (e.type === 'ability') dashes++;
+      const key = e.type === 'ability' ? e.ability : e.type;
+      if (!['hit', 'coinPickup', 'coinDrop', 'countdown'].includes(key)) stats[key] = (stats[key] ?? 0) + 1;
       if (e.type === 'fall') {
         const d = brains.get(e.playerId)!.difficulty[0];
         falls.push(`${endTime.toFixed(0)}s:${d}${e.byId ? '←' + brains.get(e.byId)!.difficulty[0] : '(сам)'}`);
@@ -37,7 +40,8 @@ for (let r = 0; r < rounds; r++) {
   }
   const winner = w.getPlayer(w.round.winnerId);
   console.log(
-    `рунд ${r}: край ${w.round.endReason} на ${endTime.toFixed(0)}s, победител ${winner?.name}(${brains.get(winner?.id ?? 0)?.difficulty}), удари ${hits}, дъшове ${dashes}`,
+    `рунд ${r}: край ${w.round.endReason} на ${endTime.toFixed(0)}s, победител ${winner?.name}(${brains.get(winner?.id ?? 0)?.difficulty}), удари ${hits}, суперсили ${dashes}`,
   );
   console.log('   падания: ' + falls.join(' '));
+  console.log('   събития: ' + JSON.stringify(stats));
 }

@@ -3,6 +3,11 @@ export type AbilityId = 'dash' | 'magnet' | 'giant' | 'freeze' | 'shield';
 
 export const ABILITY_IDS: readonly AbilityId[] = ['dash', 'magnet', 'giant', 'freeze', 'shield'];
 
+/** Неща от магазина в рунда. */
+export type ShopItemId = 'size' | 'speed' | 'shield' | 'mega';
+
+export const SHOP_ITEM_IDS: readonly ShopItemId[] = ['size', 'speed', 'shield', 'mega'];
+
 /**
  * Типове на състоянието на света. Всичко тук е „чисти данни“ –
  * лесно се копира, сериализира и праща по мрежата (етап 3) или пази за клип (етап 6).
@@ -14,6 +19,8 @@ export interface Player {
   isBot: boolean;
   /** Индекс в палитрата на клиента (цветът е визуален, не влияе на играта). */
   colorIndex: number;
+  /** Скин (само визуален – кадър от атласа на клиента). */
+  skin: string;
 
   // ── Позиция и движение ──
   x: number;
@@ -26,8 +33,15 @@ export interface Player {
   /** Посока, в която гледа (радиани). */
   facing: number;
 
+  // ── Изчислени всеки тик от базовите стойности + ефектите (виж stats.ts) ──
   radius: number;
   mass: number;
+  maxSpeed: number;
+  accel: number;
+  /** Множител на силата, с която буташ другите. */
+  hitPower: number;
+  /** Неуязвим за отблъскване, замайване и замразяване (щит). */
+  immune: boolean;
 
   // ── Състояние в рунда ──
   /** false = паднал от арената (вече не участва). */
@@ -54,6 +68,37 @@ export interface Player {
   abilityTime: number;
   /** Беше ли задържан бутонът миналия тик (за да хващаме само натискането). */
   abilityHeld: boolean;
+
+  // ── Временни ефекти (сек оставащо, 0 = няма) ──
+  /** Замразен – не може да управлява и се пързаля. */
+  frozen: number;
+  buffSize: number;
+  buffSpeed: number;
+  buffShield: number;
+  /** Мега удар е зареден (сек, докато важи). */
+  buffMega: number;
+
+  // ── Кола ──
+  /** Кара ли кола в момента. */
+  inCar: boolean;
+  /** „Живот“ на колата, която кара. */
+  carHp: number;
+  /** Вид на колата (визуално). */
+  carKind: number;
+  /** Колко още не може да влезе в кола (сек). */
+  carCooldown: number;
+}
+
+/** Паркирана (празна) кола на картата. */
+export interface Car {
+  readonly id: number;
+  x: number;
+  y: number;
+  hp: number;
+  /** Вид (визуално, индекс в списъка с коли на клиента). */
+  kind: number;
+  /** Накъде е обърната: -1 наляво, 1 надясно. */
+  dir: number;
 }
 
 export interface Coin {
