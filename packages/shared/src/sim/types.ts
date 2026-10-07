@@ -23,6 +23,21 @@ export interface Player {
 
   radius: number;
   mass: number;
+
+  // ── Състояние в рунда ──
+  /** false = паднал от арената (вече не участва). */
+  alive: boolean;
+  /** Тик, в който е паднал (-1 ако е жив). Нужно за класирането. */
+  eliminatedTick: number;
+  /** Секунди от началото на падането (за анимацията). */
+  fallTime: number;
+  /** Оставащо замайване в секунди (докато е > 0, не може да управлява). */
+  stun: number;
+  /** Кой го е ударил последно (id) и кога (тик) – за кредит при избутване. */
+  lastHitBy: number;
+  lastHitTick: number;
+  /** Брой избутани противници. */
+  knockouts: number;
 }
 
 export interface Arena {

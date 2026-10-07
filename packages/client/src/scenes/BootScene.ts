@@ -17,6 +17,8 @@ export class BootScene extends Phaser.Scene {
     this.makeEyes();
     this.makeShadow();
     this.makeDot();
+    this.makeRing();
+    this.makeStar();
     this.scene.start('Game');
   }
 
@@ -75,6 +77,32 @@ export class BootScene extends Phaser.Scene {
     g.fillStyle(0xffffff, 1);
     g.fillCircle(16, 16, 16);
     g.generateTexture('dot', 32, 32);
+    g.destroy();
+  }
+
+  /** Пръстен – ударна вълна. */
+  private makeRing(): void {
+    const g = this.add.graphics();
+    g.lineStyle(8, 0xffffff, 1);
+    g.strokeCircle(64, 64, 58);
+    g.generateTexture('ring', 128, 128);
+    g.destroy();
+  }
+
+  /** Звездичка – за замайване. */
+  private makeStar(): void {
+    const g = this.add.graphics();
+    const pts: Phaser.Math.Vector2[] = [];
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? 15 : 6.5;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      pts.push(new Phaser.Math.Vector2(16 + Math.cos(a) * r, 16 + Math.sin(a) * r));
+    }
+    g.fillStyle(COLORS.outline, 1);
+    g.fillPoints(pts.map((p) => new Phaser.Math.Vector2(16 + (p.x - 16) * 1.25, 16 + (p.y - 16) * 1.25)), true);
+    g.fillStyle(0xffe066, 1);
+    g.fillPoints(pts, true);
+    g.generateTexture('star', 32, 32);
     g.destroy();
   }
 }

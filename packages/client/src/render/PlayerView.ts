@@ -1,28 +1,37 @@
 import Phaser from 'phaser';
-import type { Player } from '@bum/shared';
+import type { Balance, Player } from '@bum/shared';
 import { FONT_FAMILY, playerColor } from '../theme';
 
 /** Размерът на текстурата 'body' е 128 px за радиус 64. */
 const BODY_TEX_RADIUS = 64;
+const STAR_COUNT = 3;
 
 /**
- * Визуално представяне на едно човече: сянка, тяло, очи, име.
+ * Визуално представяне на едно човече: сянка, тяло, очи, име, звездички при замайване.
  * Не съдържа логика на играта – само чете Player и рисува.
  */
 export class PlayerView {
   readonly container: Phaser.GameObjects.Container;
+  readonly color: number;
   private shadow: Phaser.GameObjects.Image;
   private body: Phaser.GameObjects.Image;
   private eyes: Phaser.GameObjects.Image;
   private label: Phaser.GameObjects.Text;
+  private stars: Phaser.GameObjects.Image[] = [];
+
   /** Плавна посока на погледа (за да не „скача“). */
   private lookAngle: number;
   private bobPhase = Math.random() * Math.PI * 2;
+  private starPhase = 0;
+  /** „Сплескване“ при удар (затихва). */
+  private squashAmount = 0;
+  /** Оставащо време на бялото премигване. */
+  private flashLeft = 0;
 
   constructor(scene: Phaser.Scene, p: Player, isMe: boolean) {
-    const color = playerColor(p.colorIndex);
+    this.color = playerColor(p.colorIndex);
     this.shadow = scene.add.image(0, p.radius * 0.75, 'shadow');
-    this.body = scene.add.image(0, 0, 'body').setTint(color);
+    this.body = scene.add.image(0, 0, 'body').setTint(this.color);
     this.eyes = scene.add.image(0, 0, 'eyes');
     this.label = scene.add
       .text(0, -p.radius - 22, p.name, {
@@ -34,12 +43,21 @@ export class PlayerView {
         strokeThickness: 5,
       })
       .setOrigin(0.5);
-    this.container = scene.add.container(p.x, p.y, [this.shadow, this.body, this.eyes, this.label]);
+    for (let i = 0; i < STAR_COUNT; i++) {
+      this.stars.push(scene.add.image(0, 0, 'star').setScale(0.7).setVisible(false));
+    }
+    this.container = scene.add.container(p.x, p.y, [
+      this.shadow,
+      this.body,
+      this.eyes,
+      this.label,
+      ...this.stars,
+    ]);
     this.lookAngle = p.facing;
-    this.applySize(p.radius);
+    this.layout(p.radius);
   }
 
-  private applySize(radius: number): void {
+  private layout(radius: number): void {
     const s = radius / BODY_TEX_RADIUS;
     this.body.setScale(s);
     this.eyes.setScale(s * 1.05);
@@ -48,27 +66,72 @@ export class PlayerView {
     this.label.y = -radius - 22;
   }
 
+  /** Ефект при удар: сплескване + бяло премигване. */
+  hitReact(strength: number): void {
+    this.squashAmount = Math.max(this.squashAmount, 0.12 + strength * 0.25);
+    this.flashLeft = 0.06 + strength * 0.06;
+  }
+
   /**
    * @param alpha интерполация между предишния и текущия тик (0..1)
    * @param dtSec време от предишния кадър
    */
-  update(p: Player, alpha: number, dtSec: number): void {
+  update(p: Player, alpha: number, dtSec: number, cfg: Balance): void {
     const x = p.prevX + (p.x - p.prevX) * alpha;
     const y = p.prevY + (p.y - p.prevY) * alpha;
     this.container.setPosition(x, y);
+
+    if (!p.alive) {
+      this.updateFalling(p, cfg);
+      return;
+    }
     this.container.setDepth(y); // по-долните се рисуват отгоре
 
     // Погледът плавно следва посоката.
     this.lookAngle = Phaser.Math.Angle.RotateTo(this.lookAngle, p.facing, dtSec * 12);
     const look = p.radius * 0.28;
-    this.eyes.setPosition(Math.cos(this.lookAngle) * look, Math.sin(this.lookAngle) * look * 0.8 - p.radius * 0.12);
+    this.eyes.setPosition(
+      Math.cos(this.lookAngle) * look,
+      Math.sin(this.lookAngle) * look * 0.8 - p.radius * 0.12,
+    );
 
-    // Леко „подскачане“ при ходене – прави човечето живо.
+    // Подскачане при ходене + сплескване при удар.
     const speed = Math.hypot(p.vx, p.vy);
     this.bobPhase += dtSec * (4 + speed / 30);
     const bob = Math.min(1, speed / 300) * Math.sin(this.bobPhase) * 0.06;
+    this.squashAmount *= Math.exp(-dtSec * 10);
+    const sq = this.squashAmount * Math.cos(this.bobPhase * 3); // „желе“ трептене
     const s = p.radius / BODY_TEX_RADIUS;
-    this.body.setScale(s * (1 + bob), s * (1 - bob));
+    this.body.setScale(s * (1 + bob + sq), s * (1 - bob - sq));
+
+    // Бяло премигване.
+    if (this.flashLeft > 0) {
+      this.flashLeft -= dtSec;
+      this.body.setTintFill(0xffffff);
+      if (this.flashLeft <= 0) this.body.setTint(this.color);
+    }
+
+    // Звездички над главата при замайване.
+    const stunned = p.stun > 0;
+    this.starPhase += dtSec * 7;
+    for (let i = 0; i < this.stars.length; i++) {
+      const star = this.stars[i]!;
+      star.setVisible(stunned);
+      if (!stunned) continue;
+      const a = this.starPhase + (i * Math.PI * 2) / this.stars.length;
+      star.setPosition(Math.cos(a) * p.radius * 0.8, -p.radius * 0.9 + Math.sin(a) * p.radius * 0.25);
+    }
+  }
+
+  /** Падане: смаляване, избледняване и „зад“ платформата. */
+  private updateFalling(p: Player, cfg: Balance): void {
+    const t = Math.min(1, p.fallTime / cfg.arena.fallDuration);
+    this.container.setScale(1 - t * 0.75);
+    this.container.setAlpha(1 - t);
+    this.container.setDepth(t > 0.12 ? -20 : 10000);
+    this.label.setVisible(false);
+    for (const s of this.stars) s.setVisible(false);
+    this.container.setVisible(t < 1);
   }
 
   destroy(): void {
