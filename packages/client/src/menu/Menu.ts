@@ -26,6 +26,13 @@ import { PLAYER_COLORS } from '../theme';
 /** Как да се играе: бърза онлайн игра, частна стая с приятели или офлайн тренировка. */
 export type PlayMode = 'online' | 'friends' | 'training';
 
+/**
+ * Build без сървър (напр. демо страница): VITE_OFFLINE_ONLY=1 → само тренировка срещу ботове,
+ * големият бутон е „ИГРАЙ!“, а онлайн бутоните се скриват.
+ */
+const OFFLINE_ONLY = import.meta.env.VITE_OFFLINE_ONLY === '1';
+const PRIMARY_MODE: PlayMode = OFFLINE_ONLY ? 'training' : 'online';
+
 export interface MenuOptions {
   /** Вика се при избор на игра (Enter = „Играй онлайн“). */
   onPlay(settings: PlayerSettings, mode: PlayMode): void;
@@ -308,8 +315,8 @@ function build(): HTMLElement {
 
   const play = el('button', 'bm-play', playWrap);
   play.type = 'button';
-  i18nEl('span', 'bm-play-text', 'menu.playOnline', play);
-  play.addEventListener('click', () => doPlay('online'));
+  i18nEl('span', 'bm-play-text', OFFLINE_ONLY ? 'menu.play' : 'menu.playOnline', play);
+  play.addEventListener('click', () => doPlay(PRIMARY_MODE));
   playBtns.push(play);
 
   const modes = el('div', 'bm-modes', playWrap);
@@ -323,8 +330,12 @@ function build(): HTMLElement {
     b.addEventListener('click', () => doPlay(mode));
     playBtns.push(b);
   };
-  modeBtn('friends', 'party', 'menu.playFriends', 'menu.playFriendsSub');
-  modeBtn('training', 'glove', 'menu.training', 'menu.trainingSub');
+  if (OFFLINE_ONLY) {
+    modes.remove();
+  } else {
+    modeBtn('friends', 'party', 'menu.playFriends', 'menu.playFriendsSub');
+    modeBtn('training', 'glove', 'menu.training', 'menu.trainingSub');
+  }
 
   // 6. Долу: език, звук, подсказка за управлението
   const foot = el('footer', 'bm-foot', left);
@@ -498,7 +509,7 @@ function onKey(e: KeyboardEvent): void {
   if (e.key === 'Enter') {
     e.preventDefault();
     e.stopPropagation();
-    if (!e.repeat) doPlay('online');
+    if (!e.repeat) doPlay(PRIMARY_MODE);
   } else if (e.target instanceof Node && root.contains(e.target)) {
     e.stopPropagation();
   }
