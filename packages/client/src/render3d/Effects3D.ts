@@ -44,6 +44,7 @@ export class Effects3D {
   private coinStreak = 0;
   private lastCoinTime = 0;
   private now = 0;
+  private lastKoTime = -1;
   /** Паднали, чийто плясък е „важен“ (човекът е участвал) – с надпис. */
   private importantSplash = new Set<number>();
 
@@ -219,10 +220,13 @@ export class Effects3D {
 
     // Цветна следа при падането + плясък (виж onSplash).
     const involved = e.byId === human || e.playerId === human;
-    const view = w3.character(e.playerId);
-    w3.knockouts.start(e.playerId, view?.bodyColor ?? 0xffffff, involved);
 
-    if (involved) {
+    // Много нокаути наведнъж: голям надпис и „дръпване“ на камерата само за първия.
+    const fresh = e.playerId === human || this.now - this.lastKoTime > 0.5;
+    const view = w3.character(e.playerId);
+    w3.knockouts.start(e.playerId, view?.bodyColor ?? 0xffffff, involved && fresh);
+    if (involved && fresh) {
+      this.lastKoTime = this.now;
       this.importantSplash.add(e.playerId);
       // Драматичен момент: забавяне + камерата „поглежда“ към падащия.
       this.host.slowmo?.(FEEL.koSlowmoScale, FEEL.koSlowmoSeconds);
@@ -240,7 +244,7 @@ export class Effects3D {
       sfx.knockout();
       this.host.popText(ax, ay, 100, '+1', '#8ce99a', 1.3);
     }
-    if (involved) this.host.popText(ax, ay, 150, t('fx.ko'), e.byId === human ? '#ffd23f' : '#ff5d73', 1.75);
+    if (involved && fresh) this.host.popText(ax, ay, 150, t('fx.ko'), e.byId === human ? '#ffd23f' : '#ff5d73', 1.75);
 
     if (this.host.visible(e.x, e.y)) {
       w3.fx.ring(e.x, 0, e.y, 170, 0xffffff, 0.45);
