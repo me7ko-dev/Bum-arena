@@ -49,6 +49,9 @@ export class LocalGame implements Match {
   private accumulator = 0;
   /** Оставащо „замразяване“ (hit-stop) в секунди. */
   private freezeLeft = 0;
+  /** Забавен каданс: множител на времето и колко още реални секунди трае. */
+  private slowScale = 1;
+  private slowLeft = 0;
   /** Събития, натрупани от последното четене (drainEvents). */
   private pendingEvents: GameEvent[] = [];
 
@@ -90,11 +93,22 @@ export class LocalGame implements Match {
     this.freezeLeft = Math.max(this.freezeLeft, seconds);
   }
 
+  /** Забавен каданс за драматичен момент (виж Match.slowmo). */
+  slowmo(scale: number, seconds: number): void {
+    this.slowScale = Math.max(0.05, Math.min(1, scale));
+    this.slowLeft = Math.max(this.slowLeft, seconds);
+  }
+
   /** Вика се всеки кадър с изминалото време в секунди. */
-  update(frameSec: number, input: InputSource): void {
+  update(realFrameSec: number, input: InputSource): void {
     if (this.freezeLeft > 0) {
-      this.freezeLeft -= frameSec;
+      this.freezeLeft -= realFrameSec;
       return;
+    }
+    let frameSec = realFrameSec;
+    if (this.slowLeft > 0) {
+      this.slowLeft -= realFrameSec;
+      frameSec *= this.slowScale;
     }
     const dt = this.world.dt;
     this.accumulator += Math.min(frameSec, dt * LocalGame.MAX_TICKS_PER_FRAME);

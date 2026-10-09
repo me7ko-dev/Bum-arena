@@ -47,6 +47,11 @@ export interface Match {
   drainEvents(): GameEvent[];
   /** Hit-stop: светът спира за миг (онлайн не прави нищо – светът е на сървъра). */
   freeze(seconds: number): void;
+  /**
+   * Забавен каданс: светът върви с scale (напр. 0.3) за seconds реални секунди
+   * (драматичен момент – избутване). Онлайн не прави нищо.
+   */
+  slowmo(scale: number, seconds: number): void;
   /** Край на играта (онлайн – излиза от стаята). */
   dispose(): void;
 }

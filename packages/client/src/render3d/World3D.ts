@@ -231,6 +231,13 @@ export class World3D {
     this.coins.instanceMatrix.needsUpdate = true;
   }
 
+  /**
+   * Кинематографична камера (прелитане при старт, подиум, избутване …).
+   * Ако е зададена и върне true, обичайната камера „отгоре“ не се прилага за този кадър.
+   * defaultTarget – точката, която обичайната камера следи (за плавен преход).
+   */
+  cameraOverride: ((cam: THREE.PerspectiveCamera, dt: number, defaultTarget: THREE.Vector3) => boolean) | null = null;
+
   private updateCamera(focus: Player, alpha: number, dt: number): void {
     const fx = focus.prevX + (focus.x - focus.prevX) * alpha;
     const fz = focus.prevY + (focus.y - focus.prevY) * alpha;
@@ -244,6 +251,7 @@ export class World3D {
     this.punch *= Math.exp(-dt * 10);
     const d = this.distance * (1 - this.punch);
     const cam = this.camera;
+    if (this.cameraOverride?.(cam, dt, this.camTarget)) return;
     cam.position.set(this.camTarget.x, Math.sin(PITCH) * d, this.camTarget.z + Math.cos(PITCH) * d);
 
     // Тресене: случайно отместване, което затихва.

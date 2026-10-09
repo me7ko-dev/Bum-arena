@@ -171,6 +171,9 @@ export class NetGame implements Match {
   /** Hit-stop онлайн не спира нищо: светът е на сървъра. */
   freeze(_seconds: number): void {}
 
+  /** Забавеният каданс онлайн не спира сървъра – нищо не правим. */
+  slowmo(_scale: number, _seconds: number): void {}
+
   drainEvents(): GameEvent[] {
     return this.buffer.drainEvents();
   }
