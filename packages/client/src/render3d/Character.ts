@@ -135,7 +135,8 @@ export function makeCar(kind: number): { group: THREE.Group; wheels: THREE.Mesh[
     sh.carBodies.set(kind, bodyGeo);
   }
   const group = new THREE.Group();
-  group.add(new THREE.Mesh(bodyGeo, sh.carMat));
+  // Само каросерията хвърля сянка (колелата са под нея – излишни draw calls).
+  group.add(caster(new THREE.Mesh(bodyGeo, sh.carMat)));
   const wheels = WHEEL_POS.map(([x, z]) => {
     const w = new THREE.Mesh(wheelGeometry(), sh.wheelMat);
     w.position.set(x, WHEEL_Y, z);
@@ -156,6 +157,32 @@ export interface CharacterContext {
   celebrating: boolean;
   /** Отброяване – всички махат. */
   waiting: boolean;
+  /** Кръгла „петна“-сянка (ниско качество); при високо има истински сенки. По подразбиране – да. */
+  blobShadow?: boolean;
+}
+
+/** Падане от арената: малък подскок нагоре, после свободно падане. */
+const FALL_UP = 430;
+const FALL_G = 2600;
+export function fallHeight(t: number): number {
+  return FALL_UP * t - 0.5 * FALL_G * t * t;
+}
+
+/** Бяло-синкав „rim“ ръб при силен удар (Phong + малка добавка във фрагментния шейдър). */
+function addRim(mat: THREE.MeshPhongMaterial, rim: { value: number }): void {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uRim = rim;
+    shader.fragmentShader =
+      'uniform float uRim;\n' +
+      shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        `{
+          float rimF = 1.0 - abs(dot(normal, normalize(vViewPosition)));
+          outgoingLight += vec3(1.0, 0.97, 0.9) * uRim * (0.25 + 1.6 * pow(rimF, 1.5));
+        }
+        #include <opaque_fragment>`,
+      );
+  };
 }
 
 export class CharacterView {
@@ -187,6 +214,21 @@ export class CharacterView {
   private scale = 1;
   private fallSpin = new THREE.Vector2();
   private wheelSpin = 0;
+  private rim = { value: 0 };
+  private wasDashing = false;
+  private lastHeading = 0;
+  private lastSpeed = 0;
+  private turnCooldown = 0;
+
+  /** Основният цвят на тялото (за цветната следа при падане). */
+  readonly bodyColor: number;
+  /** Скрит, след като е „цопнал“ във водата (виж KnockoutFx). */
+  splashed = false;
+  /**
+   * Прах от краката в този кадър: 0 – няма, 1 – стъпка, 2 – рязък завой / приземяване.
+   * World3D го чете след update() и пуска частиците.
+   */
+  dust = 0;
 
   constructor(
     readonly skin: string,
@@ -197,6 +239,8 @@ export class CharacterView {
     const geo = characterGeometry(skin);
     // Phong: евтин на телефон и дава „пластмасов“ отблясък като на играчка.
     this.bodyMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 45, specular: 0x3a3a3a, emissive: 0xffffff, emissiveIntensity: 0 });
+    addRim(this.bodyMat, this.rim);
+    this.bodyColor = geo.costume.body;
 
     this.shadow = new THREE.Mesh(sh.shadowGeo, sh.shadowMat);
     this.shadow.position.y = 0.6;
@@ -216,6 +260,7 @@ export class CharacterView {
 
     this.root.add(this.pivot);
     const body = new THREE.Mesh(geo.body, this.bodyMat);
+    body.castShadow = true;
     const outline = new THREE.Mesh(geo.body, sh.outlineMat);
     this.pivot.add(outline, body);
 
@@ -243,7 +288,7 @@ export class CharacterView {
     for (const s of [-1, 1]) {
       const arm = new THREE.Group();
       arm.position.set(s * 23.5, SHOULDER_Y, 0);
-      arm.add(new THREE.Mesh(geo.arm, this.bodyMat));
+      arm.add(caster(new THREE.Mesh(geo.arm, this.bodyMat)));
       arm.userData.side = s;
       arm.rotation.z = s * 0.42; // ръцете леко встрани (поза в покой)
       this.pivot.add(arm);
@@ -251,6 +296,7 @@ export class CharacterView {
 
       const leg = new THREE.Group();
       leg.position.set(s * 10, HIP_Y, 0);
+      // Краката не хвърлят сянка: тя е под тялото (пестим draw calls в прохода за сенки).
       leg.add(new THREE.Mesh(geo.leg, this.bodyMat));
       this.pivot.add(leg);
       this.legs.push(leg);
@@ -287,6 +333,8 @@ export class CharacterView {
     this.squash = Math.max(this.squash, 0.12 + strength * 0.3);
     this.flash = 0.08 + strength * 0.08;
     this.hurt = 0.35 + strength * 0.3;
+    // Силен удар – ярък бял ръб около силуета.
+    if (strength > 0.7) this.rim.value = 1.4;
   }
 
   /** Точката над главата (за името/короната), в координати на света. */
@@ -320,7 +368,10 @@ export class CharacterView {
     this.root.rotation.y = this.yaw;
 
     // ── Таймери ──
+    this.dust = 0;
+    const prevPhase = this.runPhase;
     if (!frozen) this.runPhase += dt * (5 + 12 * run);
+    this.updateDust(p, speed, run, dashing, prevPhase, dt);
     this.squash *= Math.exp(-dt * 9);
     this.hurt = Math.max(0, this.hurt - dt);
     this.blinkIn -= dt;
@@ -353,14 +404,15 @@ export class CharacterView {
       if (this.fallSpin.lengthSq() === 0) this.fallSpin.set(6 + Math.random() * 4, (Math.random() - 0.5) * 8);
       pv.rotation.x += this.fallSpin.x * dt;
       pv.rotation.z += this.fallSpin.y * dt;
-      this.root.position.y = -0.5 * 2600 * p.fallTime * p.fallTime;
+      this.root.position.y = fallHeight(p.fallTime);
       this.shadow.visible = false;
       if (this.meRing) this.meRing.visible = false;
-      this.root.visible = p.fallTime < 1.6;
+      this.root.visible = p.fallTime < 2.2 && !this.splashed;
     } else {
       this.fallSpin.set(0, 0);
+      this.splashed = false;
       pv.rotation.set(lean, 0, wobble);
-      this.shadow.visible = true;
+      this.shadow.visible = ctx.blobShadow ?? true;
       this.shadow.scale.setScalar(this.car ? 1.9 : this.scale * (1 - bob / 90));
       if (this.meRing) {
         this.meRing.visible = true;
@@ -415,6 +467,9 @@ export class CharacterView {
       eye.rotation.z = stunned ? time * 9 : 0;
     }
 
+    // ── Бял ръб при силен удар ──
+    if (this.rim.value > 0) this.rim.value = Math.max(0, this.rim.value - dt * 5);
+
     // ── Премигване при удар ──
     if (this.flash > 0) {
       this.flash -= dt;
@@ -451,6 +506,38 @@ export class CharacterView {
     }
   }
 
+  /**
+   * Прах от краката: при всяко стъпване на бягане (по-бързо → по-често),
+   * при рязък завой и при „приземяване“ след дъш (+ сплескване).
+   */
+  private updateDust(p: Player, speed: number, run: number, dashing: boolean, prevPhase: number, dt: number): void {
+    this.turnCooldown = Math.max(0, this.turnCooldown - dt);
+    const grounded = p.alive && !this.car && p.frozen <= 0;
+    if (this.wasDashing && !dashing && grounded) {
+      this.squash = Math.max(this.squash, 0.22);
+      this.dust = 2;
+    }
+    this.wasDashing = dashing;
+    if (!grounded) return;
+    // Стъпка: |sin(фаза)| минава през 0 на всеки π.
+    if (run > 0.45 && Math.floor(this.runPhase / Math.PI) !== Math.floor(prevPhase / Math.PI)) this.dust = Math.max(this.dust, 1);
+    // Рязък завой (посоката на скоростта се върти бързо при голяма скорост).
+    const heading = Math.atan2(p.vx, p.vy);
+    let d = heading - this.lastHeading;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    this.lastHeading = heading;
+    const fast = speed > 150 && this.lastSpeed > 150;
+    this.lastSpeed = speed;
+    if (fast) {
+      if (Math.abs(d) / Math.max(dt, 1e-3) > 9 && this.turnCooldown <= 0 && !dashing) {
+        this.squash = Math.max(this.squash, 0.14);
+        this.dust = 2;
+        this.turnCooldown = 0.3;
+      }
+    }
+  }
+
   private updateCar(p: Player, speed: number, dt: number): void {
     const want = p.inCar && p.alive;
     if (want && (!this.car || this.car.kind !== p.carKind)) {
@@ -473,6 +560,12 @@ export class CharacterView {
     this.bodyMat.dispose();
     this.root.removeFromParent();
   }
+}
+
+/** Меш, който хвърля истинска сянка (при високо качество). */
+function caster(m: THREE.Mesh): THREE.Mesh {
+  m.castShadow = true;
+  return m;
 }
 
 /** Посоката в симулацията (atan2(y, x)) → завъртане около Y в Three.js (напред е +z). */

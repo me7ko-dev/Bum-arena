@@ -107,6 +107,8 @@ export class GameScene extends Phaser.Scene {
       player: (id) => this.match.world.getPlayer(id),
       listener: () => this.focusPlayer,
       freeze: (s) => this.match.freeze(s),
+      // Ефекти: забавен каданс при нокаут (онлайн Match.slowmo не прави нищо).
+      slowmo: (scale, seconds) => this.match.slowmo(scale, seconds),
       popText: (x, y, h, text, color, scale) => this.popText(x, y, h, text, color, scale),
       popIcon: (x, y, h, frame, scale) => this.popIcon(x, y, h, frame, scale),
       visible: (x, y) => this.world3d.project(x, 30, y).visible,

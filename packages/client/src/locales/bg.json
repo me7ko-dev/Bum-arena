@@ -104,5 +104,9 @@
   "hud.place": "#{n}",
   "hud.ofTotal": "от {total}",
   "hud.statKo": "избутани",
-  "hud.statCoins": "монети"
+  "hud.statCoins": "монети",
+  "fx.ko": "НОКАУТ!",
+  "fx.pow": "ПАУ!",
+  "fx.bam": "БАМ!",
+  "fx.splash": "ПЛЯС!"
 }

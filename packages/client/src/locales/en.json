@@ -104,5 +104,9 @@
   "hud.place": "#{n}",
   "hud.ofTotal": "of {total}",
   "hud.statKo": "knockouts",
-  "hud.statCoins": "coins"
+  "hud.statCoins": "coins",
+  "fx.ko": "KO!",
+  "fx.pow": "POW!",
+  "fx.bam": "BAM!",
+  "fx.splash": "SPLASH!"
 }

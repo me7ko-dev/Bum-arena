@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import type { Arena } from '@bum/shared';
 
-// ───────────── Небе, море, облаци ─────────────
+// ───────────── Небе, облаци ─────────────
 
 export function buildSky(scene: THREE.Scene): void {
   const top = new THREE.Color(0x3d8bff);
@@ -24,14 +24,7 @@ export function buildSky(scene: THREE.Scene): void {
   sky.renderOrder = -10;
   scene.add(sky);
   scene.fog = new THREE.Fog(0xbfe6ff, 3200, 8500);
-
-  // Море далеч долу.
-  const sea = new THREE.Mesh(
-    new THREE.CircleGeometry(9000, 48).rotateX(-Math.PI / 2),
-    new THREE.MeshLambertMaterial({ color: 0x2bb3d9 }),
-  );
-  sea.position.y = -1400;
-  scene.add(sea);
+  // Морето далеч долу е отделно – виж Water.ts.
 }
 
 /** Облачета и островчета наоколо – само атмосфера. Връща функция за анимиране. */
@@ -75,7 +68,8 @@ export function buildScenery(scene: THREE.Scene): (dt: number) => void {
       crown.position.set((t - 0.5) * r * 0.8, 105, 0);
       g.add(trunk, crown);
     }
-    const a = (i / 6) * Math.PI * 2 + 0.5;
+    // Нито едно островче точно „горе“ (-z) – там е далечният ръб, където падат героите.
+    const a = (i / 6) * Math.PI * 2 + 1.05;
     const d = 2600 + (i % 2) * 900;
     g.position.set(Math.cos(a) * d, -500 - (i % 3) * 220, Math.sin(a) * d);
     scene.add(g);
@@ -97,11 +91,35 @@ export function buildScenery(scene: THREE.Scene): (dt: number) => void {
   };
 }
 
+/** Посока към слънцето (от земята нагоре). */
+export const SUN_DIR = new THREE.Vector3(-600, 1400, 900).normalize();
+
+/**
+ * Светлини. Слънцето може да хвърля истински меки сенки (само при високо качество):
+ * една карта 1024², която следва камерата (виж World3D.updateShadow).
+ */
 export function buildLights(scene: THREE.Scene): THREE.DirectionalLight {
   scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x9a86c9, 1.25));
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.7);
-  sun.position.set(-600, 1400, 900);
-  scene.add(sun);
+  sun.position.copy(SUN_DIR).multiplyScalar(2000);
+  const sh = sun.shadow;
+  sh.mapSize.set(1024, 1024);
+  const cam = sh.camera;
+  cam.left = -900;
+  cam.right = 900;
+  cam.top = 900;
+  cam.bottom = -900;
+  cam.near = 1200;
+  cam.far = 2800;
+  cam.updateProjectionMatrix();
+  // Само подът приема сенки и той самият не хвърля → няма „акне“; малък bias за ръбовете.
+  sh.bias = -0.0006;
+  sh.normalBias = 0;
+  sh.radius = 3;
+  // Стилизирана, не съвсем черна сянка.
+  sh.intensity = 0.62;
+  sun.castShadow = false;
+  scene.add(sun, sun.target);
   return sun;
 }
 
@@ -198,6 +216,7 @@ export class Arena3D {
       new THREE.CircleGeometry(1, 96).rotateX(-Math.PI / 2),
       new THREE.MeshLambertMaterial({ map: floorTexture() }),
     );
+    top.receiveShadow = true;
     const rim = new THREE.Mesh(
       new THREE.CylinderGeometry(1, 1, RIM, 96, 1, true).translate(0, -RIM / 2, 0),
       new THREE.MeshLambertMaterial({ map: stripeTexture() }),
