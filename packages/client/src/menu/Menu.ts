@@ -20,7 +20,8 @@ import {
   type PlayerSettings,
 } from '../game/settings';
 import { t, toggleLang, onLangChange } from '../i18n';
-import { sfx } from '../audio/Sfx';
+import { sfx, uiClick, uiHover } from '../audio/Sfx';
+import { music } from '../audio/Music';
 import { PLAYER_COLORS } from '../theme';
 
 /** Как да се играе: бърза онлайн игра, частна стая с приятели или офлайн тренировка. */
@@ -110,6 +111,11 @@ function setSprite(el: HTMLElement, frame: string, sizePx: number): void {
 
 /** 3D снимки на героите (скин → data URL). Ако ги няма – показва се емоджито. */
 let skinThumbs: Map<string, string> | null = null;
+
+/** 3D снимките на героите, ако вече са готови (HUD-ът ги ползва за лицата в лентата с избутвания). */
+export function getSkinThumbnails(): Map<string, string> | null {
+  return skinThumbs;
+}
 
 /** Подава 3D снимките на героите (вика се от main.ts след зареждане). */
 export function setSkinThumbnails(thumbs: Map<string, string>): void {
@@ -354,6 +360,18 @@ function build(): HTMLElement {
 
   // Звукът се „отключва“ при първото щракване където и да е в менюто.
   menu.addEventListener('click', () => sfx.unlock(), true);
+  // Звуци на бутоните: „тик“ при посочване с мишката, „клик“ при натискане
+  // (героите и суперсилите си имат свои звуци при избор).
+  let hovered: Element | null = null;
+  menu.addEventListener('pointerover', (e) => {
+    const b = (e.target as Element | null)?.closest('button');
+    if (b !== hovered && b && e.pointerType === 'mouse' && !(b as HTMLButtonElement).disabled) uiHover();
+    hovered = b ?? null;
+  });
+  menu.addEventListener('click', (e) => {
+    const b = (e.target as Element | null)?.closest('button');
+    if (b && !b.matches('.bm-skin, .bm-ability')) uiClick();
+  });
   window.addEventListener('keydown', onKey, true);
   onLangChange(renderTexts);
   return menu;
@@ -527,6 +545,8 @@ export function showMenu(options: MenuOptions, initialStatus: MenuStatus = null)
   nameInput.value = settings.name;
   renderTexts();
   root.classList.remove('bm-hidden');
+  // По-спокойната музика на менюто (започва при първото натискане – правило на браузърите).
+  music.play('menu');
 }
 
 export function hideMenu(): void {

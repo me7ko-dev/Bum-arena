@@ -93,5 +93,16 @@
   "net.nextRound": "Next round in {n}…",
   "net.nextRoundSoon": "Next round is starting…",
   "net.spectatorBanner": "Spectating – you join the next round",
-  "net.ping": "{n} ms"
+  "net.ping": "{n} ms",
+  "hud.skipIntro": "Press anything to skip »",
+  "hud.leader": "YOU'RE THE LEADER!",
+  "hud.leaderSub": "The crown is yours – watch out!",
+  "hud.last30": "30 SECONDS LEFT!",
+  "hud.last10": "FINAL 10 SECONDS!",
+  "hud.knockedOut": "You knocked out {name}!",
+  "hud.pushedByLabel": "Knocked out by",
+  "hud.place": "#{n}",
+  "hud.ofTotal": "of {total}",
+  "hud.statKo": "knockouts",
+  "hud.statCoins": "coins"
 }

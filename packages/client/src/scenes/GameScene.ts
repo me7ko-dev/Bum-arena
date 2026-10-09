@@ -8,6 +8,10 @@ import { HumanInput } from '../input/HumanInput';
 import { loadSettings, type PlayerSettings } from '../game/settings';
 import { Effects3D } from '../render3d/Effects3D';
 import { World3D } from '../render3d/World3D';
+// Кинематография и музика: прелитане при старт, подиум в края, фонова музика.
+import { IntroCamera } from '../render3d/IntroCamera';
+import { Podium } from '../render3d/Podium';
+import { RoundMusic } from '../audio/Music';
 import { t } from '../i18n';
 import { FONT_FAMILY } from '../theme';
 
@@ -56,6 +60,11 @@ export class GameScene extends Phaser.Scene {
   frameEvents: GameEvent[] = [];
   /** Кого следи камерата, след като си паднал (-1 = теб). */
   spectateId = -1;
+  /** Прелитане на камерата по време на отброяването (HUD-ът показва „пропусни“). */
+  intro!: IntroCamera;
+  /** Подиумът в края на рунда (HUD-ът рисува имената над героите). */
+  podium!: Podium;
+  private roundMusic!: RoundMusic;
 
   constructor() {
     super('Game');
@@ -107,6 +116,16 @@ export class GameScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, onResize);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, onResize));
 
+    // ── Кинематография: прелитане при старта + подиум в края (виж IntroCamera/Podium) ──
+    this.intro = new IntroCamera();
+    this.podium = new Podium(this.world3d, () => ({ width: this.scale.width, height: this.scale.height }));
+    this.world3d.cameraOverride = (cam, dt, target) => this.podium.applyCamera(cam) || this.intro.apply(cam, dt, target);
+    this.roundMusic = new RoundMusic();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.world3d.cameraOverride = null;
+      this.podium.dispose();
+    });
+
     this.setupGlobalKeys();
 
     // HUD върви като отделна сцена върху играта.
@@ -136,7 +155,11 @@ export class GameScene extends Phaser.Scene {
 
   /** Звукът се разрешава при първо действие; R = нов рунд; M = без звук. */
   private setupGlobalKeys(): void {
-    const unlock = () => sfx.unlock();
+    // Всяко натискане отключва звука и пропуска прелитането на камерата.
+    const unlock = () => {
+      sfx.unlock();
+      this.intro.skip();
+    };
     this.input.on(Phaser.Input.Events.POINTER_DOWN, unlock);
     this.input.keyboard?.on('keydown', unlock);
     this.input.keyboard?.on('keydown-R', () => this.restartRound());
@@ -238,7 +261,7 @@ export class GameScene extends Phaser.Scene {
       const label = this.labels.get(p.id);
       const view = this.world3d.character(p.id);
       if (!label || !view) continue;
-      if (!p.alive) {
+      if (!p.alive || this.podium.active) {
         label.container.setVisible(false);
         continue;
       }
@@ -258,6 +281,24 @@ export class GameScene extends Phaser.Scene {
         g.fillRoundedRect(-bw / 2, 5, bw * frac, 5, 2.5);
       }
     }
+  }
+
+  /** Прелитането, подиумът и музиката следват фазата на рунда (преди рисуването на кадъра). */
+  private updateCinematics(dtSec: number): void {
+    const w = this.match.world;
+    const r = w.round;
+    const total = w.cfg.round.countdown;
+    const elapsed = Math.min(total, r.phaseTime + this.match.alpha * w.dt);
+    this.intro.update(dtSec, { phase: r.phase, waiting: this.match.waiting, elapsed, total, arenaRadius: w.arena.radius });
+    this.podium.update(dtSec, w);
+    this.roundMusic.update({
+      phase: r.phase,
+      waiting: this.match.waiting,
+      countdownLeft: total - elapsed,
+      timeLeft: r.timeLeft,
+      shrinking: w.arena.shrinking,
+      iWon: r.winnerId >= 0 && r.winnerId === this.match.humanId,
+    });
   }
 
   override update(): void {
@@ -281,6 +322,7 @@ export class GameScene extends Phaser.Scene {
     // Чакаме малко след падането, за да видиш как летиш, после камерата превключва.
     if (!this.match.human.alive && this.match.human.fallTime > 1.2) this.updateSpectate();
 
+    this.updateCinematics(dtSec);
     this.world3d.update(this.match.world, this.match.alpha, dtSec, this.focusPlayer, this.match.humanId);
     this.updateLabels();
   }

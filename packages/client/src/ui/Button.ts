@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { FONT_FAMILY } from '../theme';
+import { uiClick, uiHover } from '../audio/Sfx';
 
 export interface ButtonOptions {
   width?: number;
@@ -40,9 +41,13 @@ export class Button {
     this.container.setSize(w, h + 6);
     this.container.setInteractive({ useHandCursor: true });
     this.container.on(Phaser.Input.Events.POINTER_DOWN, () => this.container.setScale(0.94));
+    this.container.on(Phaser.Input.Events.POINTER_OVER, (p: Phaser.Input.Pointer) => {
+      if (!p.wasTouch) uiHover();
+    });
     this.container.on(Phaser.Input.Events.POINTER_OUT, () => this.container.setScale(1));
     this.container.on(Phaser.Input.Events.POINTER_UP, () => {
       this.container.setScale(1);
+      uiClick();
       onClick();
     });
   }

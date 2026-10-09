@@ -93,5 +93,16 @@
   "net.nextRound": "Следващ рунд след {n}…",
   "net.nextRoundSoon": "Следващият рунд започва…",
   "net.spectatorBanner": "Гледаш – влизаш в следващия рунд",
-  "net.ping": "{n} ms"
+  "net.ping": "{n} ms",
+  "hud.skipIntro": "Натисни, за да пропуснеш »",
+  "hud.leader": "ТИ СИ ВОДАЧ!",
+  "hud.leaderSub": "Короната е твоя – пази се!",
+  "hud.last30": "ОСТАВАТ 30 СЕКУНДИ!",
+  "hud.last10": "ПОСЛЕДНИТЕ 10 СЕКУНДИ!",
+  "hud.knockedOut": "Избута {name}!",
+  "hud.pushedByLabel": "Избута те",
+  "hud.place": "#{n}",
+  "hud.ofTotal": "от {total}",
+  "hud.statKo": "избутани",
+  "hud.statCoins": "монети"
 }

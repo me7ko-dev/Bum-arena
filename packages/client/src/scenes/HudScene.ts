@@ -2,9 +2,8 @@ import Phaser from 'phaser';
 import {
   SHOP_ITEM_IDS,
   abilityCooldownTotal,
-  placeOf,
-  standings,
   type GameEvent,
+  type Player,
   type ShopItemId,
 } from '@bum/shared';
 import { ATLAS } from '../assets';
@@ -13,7 +12,13 @@ import { sfx } from '../audio/Sfx';
 import { t, toggleLang } from '../i18n';
 import { FONT_FAMILY } from '../theme';
 import { AbilityButton } from '../ui/AbilityButton';
+import { showBanner } from '../ui/Banner';
 import { Button } from '../ui/Button';
+import { CoinFly } from '../ui/CoinFly';
+import { CountdownFx } from '../ui/CountdownFx';
+import { addFace, ensureFaces } from '../ui/faces';
+import { KillFeed } from '../ui/KillFeed';
+import { buildEliminatedPanel, buildResultsPanel } from '../ui/Panels';
 import { ShopButton } from '../ui/ShopButton';
 import { StatCounter } from '../ui/StatCounter';
 import { VirtualJoystick } from '../ui/VirtualJoystick';
@@ -35,6 +40,12 @@ const SHOP_ICONS: Record<ShopItemId, string> = { size: 'muscle', speed: 'shoe', 
 /** Височина на картата със стаята (онлайн). */
 const ROOM_BOX_H = 132;
 
+/** След колко ms от края на рунда се показва класирането (камерата вече лети към подиума). */
+const RESULTS_DELAY = 2000;
+
+/** Цветът на медала за 1, 2, 3 място (етикетите над подиума). */
+const MEDAL_COLORS = [0xffc928, 0x9fd3ff, 0xff9a62];
+
 const TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
   fontFamily: FONT_FAMILY,
   fontStyle: '900',
@@ -54,10 +65,13 @@ export class HudScene extends Phaser.Scene {
   private coinCounter!: StatCounter;
   private koCounter!: StatCounter;
   private timerText!: Phaser.GameObjects.Text;
+  private aliveBox!: Phaser.GameObjects.Container;
+  private aliveBg!: Phaser.GameObjects.Graphics;
   private aliveText!: Phaser.GameObjects.Text;
   private bannerText!: Phaser.GameObjects.Text;
-  private bigText!: Phaser.GameObjects.Text;
+  private countdown!: CountdownFx;
   private spectateText!: Phaser.GameObjects.Text;
+  private skipHint!: Phaser.GameObjects.Text;
   private fpsText!: Phaser.GameObjects.Text;
   private soundBtn!: Button;
   private joystick!: VirtualJoystick;
@@ -65,14 +79,21 @@ export class HudScene extends Phaser.Scene {
   private abilityPointerId = -1;
   private isTouch = false;
   private shopButtons = new Map<ShopItemId, ShopButton>();
-  private feed!: Phaser.GameObjects.Container;
-  private feedItems: { c: Phaser.GameObjects.Container; age: number }[] = [];
+  private feed!: KillFeed;
+  private coinFly!: CoinFly;
   private crownArrow!: Phaser.GameObjects.Container;
+  /** Червено сияние по ръбовете в последните 10 секунди. */
+  private vignette!: Phaser.GameObjects.Image;
   /** Панелът „Падна!“ или „Класиране“ (само един наведнъж). */
   private panel: Phaser.GameObjects.Container | null = null;
   private panelKind: 'eliminated' | 'results' | null = null;
   /** Кога е показан панелът „Падна!“ (да не се показва пак след „Гледай“). */
   private eliminatedShown = false;
+  /** Последно показаните секунди / живи – за „подскоците“ при промяна. */
+  private lastSecs = -1;
+  private lastAlive = -1;
+  /** Етикетите с имената над героите на подиума. */
+  private podiumLabels: Phaser.GameObjects.Container[] = [];
 
   // ── Онлайн ──
   /** Карта със стаята и „Копирай линк“ (в лобито и при отброяването). */
@@ -101,10 +122,17 @@ export class HudScene extends Phaser.Scene {
     this.pingText = null;
     this.spectatorBanner = null;
     this.nextRoundText = null;
+    this.shopButtons = new Map();
+    this.lastSecs = -1;
+    this.lastAlive = -1;
+    this.podiumLabels = [];
   }
 
   create(): void {
     const me = this.gameScene.match.human;
+    ensureFaces(this);
+    this.makeVignetteTexture();
+    this.vignette = this.add.image(0, 0, 'hud-vignette').setOrigin(0).setAlpha(0).setDepth(-2);
     this.abilityBtn = new AbilityButton(this, 46, ABILITY_INFO[me.ability].icon, 'SPACE');
     for (const [i, item] of SHOP_ITEM_IDS.entries()) {
       const btn = new ShopButton(this, 27, SHOP_ICONS[item], this.gameScene.match.world.cfg.shop[item].price, String(i + 1), () => {
@@ -113,7 +141,7 @@ export class HudScene extends Phaser.Scene {
       });
       this.shopButtons.set(item, btn);
     }
-    this.feed = this.add.container(0, 0);
+    this.feed = new KillFeed(this);
     const arrowG = this.add.graphics();
     arrowG.fillStyle(0xffd23f, 1);
     arrowG.fillTriangle(30, 0, 14, -12, 14, 12);
@@ -124,19 +152,31 @@ export class HudScene extends Phaser.Scene {
     this.crownArrow.setVisible(false);
     this.coinCounter = new StatCounter(this, 'coin', 0.3, '#ffd23f');
     this.koCounter = new StatCounter(this, 'boom', 0.3);
-    this.timerText = this.add.text(0, 0, '3:00', { ...TEXT_STYLE, fontSize: '34px' }).setOrigin(0.5, 0);
-    this.aliveText = this.add.text(0, 0, '', { ...TEXT_STYLE, fontSize: '18px', strokeThickness: 4 }).setOrigin(0.5, 0);
+    this.coinFly = new CoinFly(
+      this,
+      () => ({ x: this.coinCounter.container.x, y: this.coinCounter.container.y }),
+      (step) => {
+        sfx.coinLand(step);
+        this.tweens.add({ targets: this.coinCounter.container, scale: { from: 1.18, to: 1 }, duration: 180, ease: 'Back.easeOut' });
+      },
+    );
+    // Център в средата – при пулсиране в последните секунди расте във всички посоки.
+    this.timerText = this.add.text(0, 0, '3:00', { ...TEXT_STYLE, fontSize: '34px' }).setOrigin(0.5, 0.5);
+    this.aliveBg = this.add.graphics();
+    this.aliveText = this.add.text(0, 0, '', { ...TEXT_STYLE, fontSize: '17px', strokeThickness: 4 }).setOrigin(0.5);
+    this.aliveBox = this.add.container(0, 0, [this.aliveBg, this.aliveText]);
     this.bannerText = this.add
       .text(0, 0, '', { ...TEXT_STYLE, fontSize: '26px', color: '#ff8fa3' })
       .setOrigin(0.5)
       .setVisible(false);
-    this.bigText = this.add
-      .text(0, 0, '', { ...TEXT_STYLE, fontSize: '120px', color: '#ffd23f', strokeThickness: 14 })
-      .setOrigin(0.5)
-      .setAlpha(0);
+    this.countdown = new CountdownFx(this);
     this.spectateText = this.add
       .text(0, 0, '', { ...TEXT_STYLE, fontSize: '20px', strokeThickness: 4 })
       .setOrigin(0.5, 1);
+    this.skipHint = this.add
+      .text(0, 0, t('hud.skipIntro'), { ...TEXT_STYLE, fontSize: '17px', strokeThickness: 4, color: '#e5dbff' })
+      .setOrigin(0.5, 1)
+      .setVisible(false);
 
     this.fpsText = this.add
       .text(0, 0, '', { ...TEXT_STYLE, fontSize: '14px', strokeThickness: 3 })
@@ -161,7 +201,22 @@ export class HudScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layout, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.layout, this);
+      this.coinFly.reset();
     });
+  }
+
+  /** Червено сияние по ръбовете (текстура, рисувана веднъж). */
+  private makeVignetteTexture(): void {
+    if (this.textures.exists('hud-vignette')) return;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d')!;
+    const grad = g.createRadialGradient(128, 128, 70, 128, 128, 182);
+    grad.addColorStop(0, 'rgba(255,40,80,0)');
+    grad.addColorStop(1, 'rgba(255,40,80,0.85)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 256, 256);
+    this.textures.addCanvas('hud-vignette', c);
   }
 
   /** Подрежда елементите според размера на екрана. */
@@ -175,20 +230,39 @@ export class HudScene extends Phaser.Scene {
       btn.container.setPosition(width - pad - 34, height - pad - 56 - 112 - i * 66);
       i++;
     }
-    this.feed.setPosition(width - pad - 66, pad + 60);
+    // Лентата с избутванията – горе вдясно, под бутона за звука (подравнена отдясно).
+    // На тесен екран – по-ниско, за да не опира в хапчето „N в игра“ под таймера.
+    this.feed.container.setPosition(width - pad + 8, pad + (width < 520 ? 88 : 66));
+    this.feed.maxName = width < 520 ? 7 : 12;
+    this.feed.maxRows = width < 520 ? 3 : 4;
     this.coinCounter.container.setPosition(pad + 10, pad + 10);
     this.koCounter.container.setPosition(pad + 10, pad + 62);
-    this.timerText.setPosition(width / 2, pad - 12);
-    this.aliveText.setPosition(width / 2, pad + 28);
-    this.bannerText.setPosition(width / 2, pad + 78);
-    this.bigText.setPosition(width / 2, height * 0.38);
+    this.timerText.setPosition(width / 2, pad + 9);
+    this.aliveBox.setPosition(width / 2, pad + 42);
+    this.bannerText.setPosition(width / 2, pad + 84);
+    this.countdown.layout(width, height);
+    this.vignette.setDisplaySize(width, height);
     this.spectateText.setPosition(width / 2, height - pad);
+    this.skipHint.setPosition(width / 2, height - pad + 6);
     this.fpsText.setPosition(pad - 10, pad + 92);
     this.pingText?.setPosition(pad - 10, pad + (this.fpsText.visible ? 110 : 92));
     this.spectatorBanner?.setPosition(width / 2, height - pad - 30);
     this.layoutRoomBox(width, height, pad);
     this.soundBtn.container.setPosition(width - pad - 24, pad + 18);
-    this.panel?.setPosition(width / 2, height / 2);
+    if (this.panelKind === 'results' && this.panel) this.showResults(false);
+    else this.panel?.setPosition(width / 2, this.eliminatedY());
+  }
+
+  /** Височина на големите ленти: на тесен екран – под лентата с избутванията. */
+  private bannerY(): number {
+    const { width, height } = this.scale;
+    return width < 700 ? Math.max(height * 0.34, 290) : height * 0.27;
+  }
+
+  /** „Падна!“ – в центъра; на изправен телефон малко по-ниско (горе е таймерът и лентата). */
+  private eliminatedY(): number {
+    const { width, height } = this.scale;
+    return width < height ? height * 0.54 : height / 2 + 10;
   }
 
   /** Сензорно управление: джойстик навсякъде извън бутоните + бутон за суперсила. */
@@ -242,12 +316,14 @@ export class HudScene extends Phaser.Scene {
     const world = match.world;
     const me = match.human;
     const dtSec = deltaMs / 1000;
+    const r = world.round;
+    const ended = r.phase === 'ended';
 
     for (const e of this.gameScene.frameEvents) this.onEvent(e);
 
     // Сензорно движение → входа на човека.
     this.gameScene.humanInput.setTouchMove(this.joystick.x, this.joystick.y);
-    if (this.isTouch && me.alive && !this.panel && world.round.phase !== 'ended') {
+    if (this.isTouch && me.alive && !this.panel && !ended && !this.gameScene.intro.active) {
       const { height } = this.scale;
       const pad = Math.max(24, Math.min(this.scale.width, height) * 0.05);
       this.joystick.showIdleHint(pad + 90, height - pad - 90);
@@ -256,12 +332,13 @@ export class HudScene extends Phaser.Scene {
     }
     if (this.fpsText.visible) this.fpsText.setText(`${Math.round(this.game.loop.actualFps)} FPS`);
     if (match.online) this.updateNetUi();
+    this.soundBtn.setLabel(sfx.muted ? '×' : '♪');
 
     // Суперсила
     const becameReady = this.abilityBtn.update(me.abilityCooldown, abilityCooldownTotal(world.cfg, me), dtSec);
-    if (becameReady && me.alive && world.round.phase === 'playing') sfx.ready();
+    if (becameReady && me.alive && r.phase === 'playing') sfx.ready();
     // В лобито (онлайн) светът стои – без суперсила и магазин.
-    const inPlay = me.alive && world.round.phase !== 'ended' && !match.waiting;
+    const inPlay = me.alive && !ended && !match.waiting;
     this.abilityBtn.container.setVisible(inPlay);
     this.abilityBtn.setIcon(me.inCar ? 'wrench' : ABILITY_INFO[me.ability].icon);
 
@@ -274,24 +351,24 @@ export class HudScene extends Phaser.Scene {
         (item === 'speed' && me.buffSpeed > 0) ||
         (item === 'shield' && me.buffShield > 0) ||
         (item === 'mega' && me.buffMega > 0);
-      btn.update(me.coins >= price && world.round.phase === 'playing', active, dtSec);
+      btn.update(me.coins >= price && r.phase === 'playing', active, dtSec);
     }
 
-    this.updateFeed(dtSec);
+    this.feed.update(dtSec);
     this.updateCrownArrow();
 
-    // Броячи
-    this.coinCounter.set(me.coins);
+    // Броячи (монетите – без летящите към брояча: числото скача, когато пристигнат)
+    this.coinCounter.set(Math.max(0, me.coins - Math.round(this.coinFly.inFlight)));
     this.coinCounter.update(dtSec);
     this.koCounter.set(me.knockouts);
     this.koCounter.update(dtSec);
 
-    // Таймер и живи
-    const r = world.round;
-    const secs = r.phase === 'countdown' ? world.cfg.round.duration : Math.ceil(r.timeLeft);
-    this.timerText.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
-    this.timerText.setColor(r.phase === 'playing' && secs <= 10 ? '#ff8fa3' : '#ffffff');
-    this.aliveText.setText(t('alive', { n: world.alivePlayers().length }));
+    this.updateTimer();
+    this.updateAlive(world.alivePlayers().length);
+
+    // В края (подиумът): махаме всичко от играта – остават само подиумът и класирането.
+    for (const o of [this.timerText, this.aliveBox, this.coinCounter.container, this.koCounter.container]) o.setVisible(!ended);
+    this.feed.setVisible(!ended);
 
     // Предупреждение за свиване
     const arena = world.arena;
@@ -304,14 +381,21 @@ export class HudScene extends Phaser.Scene {
     }
     if (this.bannerText.visible) this.bannerText.setScale(1 + 0.06 * Math.sin(this.time.now / 90));
 
+    // Подсказка „Натисни, за да пропуснеш“ по време на прелитането.
+    const intro = this.gameScene.intro.active && !match.waiting && !this.roomBox?.visible;
+    this.skipHint.setVisible(intro);
+    if (intro) this.skipHint.setAlpha(0.55 + 0.45 * Math.sin(this.time.now / 220));
+
     // Наблюдение
     const focus = this.gameScene.focusPlayer;
-    this.spectateText.setVisible(!me.alive && focus.id !== me.id && this.panelKind !== 'results');
+    this.spectateText.setVisible(!me.alive && focus.id !== me.id && !ended && !this.panel);
     this.spectateText.setText(t('spectating', { name: focus.name }));
 
+    this.updatePodiumLabels();
+
     // Панели
-    if (r.phase === 'ended' && this.panelKind !== 'results') {
-      this.time.delayedCall(900, () => this.showResults());
+    if (ended && this.panelKind !== 'results') {
+      this.time.delayedCall(RESULTS_DELAY, () => this.showResults(true));
       this.panelKind = 'results'; // за да не се вика пак, докато чака
       this.closePanel(false);
     } else if (!me.alive && !match.isSpectator && r.phase === 'playing' && !this.eliminatedShown && me.fallTime > 0.9) {
@@ -320,74 +404,122 @@ export class HudScene extends Phaser.Scene {
     }
   }
 
+  /** Таймерът: в последните 10 сек – червен, пулсира всяка секунда, „тик“ и червено сияние. */
+  private updateTimer(): void {
+    const world = this.gameScene.match.world;
+    const r = world.round;
+    const secs = r.phase === 'countdown' ? world.cfg.round.duration : Math.ceil(r.timeLeft);
+    this.timerText.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
+    const final = r.phase === 'playing' && secs <= 10;
+    this.timerText.setColor(final ? '#ff5d73' : r.phase === 'playing' && secs <= 30 ? '#ffd23f' : '#ffffff');
+    if (r.phase === 'playing' && this.lastSecs > 0 && secs < this.lastSecs) {
+      const { width } = this.scale;
+      // Ако е отворен панел („Падна!“) – без голяма лента върху него.
+      if (secs === 30 && !this.panel) {
+        showBanner(this, width / 2, this.bannerY(), width - 40, { title: t('hud.last30'), icon: 'bolt', color: 0x9c6bff, hold: 1300 });
+      }
+      if (secs === 10 && !this.panel) {
+        showBanner(this, width / 2, this.bannerY(), width - 40, { title: t('hud.last10'), icon: 'fire', color: 0xff5d73, hold: 1300 });
+      }
+      if (final && secs > 0) {
+        sfx.tick(secs <= 5);
+        this.tweens.killTweensOf(this.timerText);
+        this.timerText.setScale(secs <= 5 ? 1.75 : 1.5);
+        this.tweens.add({ targets: this.timerText, scale: 1.15, duration: 420, ease: 'Back.easeOut' });
+        this.vignette.setAlpha(secs <= 5 ? 0.75 : 0.45);
+        this.tweens.killTweensOf(this.vignette);
+        this.tweens.add({ targets: this.vignette, alpha: 0, duration: 700, ease: 'Cubic.easeOut' });
+      }
+    }
+    if (!final && this.timerText.scale !== 1 && !this.tweens.isTweening(this.timerText)) this.timerText.setScale(1);
+    this.lastSecs = secs;
+  }
+
+  /** „8 в игра“ – хапче под таймера, което подскача (и почервенява за миг), щом някой падне. */
+  private updateAlive(n: number): void {
+    if (n === this.lastAlive) return;
+    const first = this.lastAlive < 0;
+    const fewer = n < this.lastAlive;
+    this.lastAlive = n;
+    this.aliveText.setText(t('alive', { n }));
+    const w = this.aliveText.width + 28;
+    const g = this.aliveBg;
+    g.clear();
+    g.fillStyle(0x2a1650, 0.65);
+    g.fillRoundedRect(-w / 2, -15, w, 30, 15);
+    if (first) return;
+    this.tweens.killTweensOf(this.aliveBox);
+    this.aliveBox.setScale(1.5);
+    this.tweens.add({ targets: this.aliveBox, scale: 1, duration: 380, ease: 'Back.easeOut' });
+    if (fewer) {
+      this.aliveText.setColor('#ff8fa3');
+      this.time.delayedCall(450, () => this.aliveText.setColor('#ffffff'));
+    }
+  }
+
   private onEvent(e: GameEvent): void {
-    const meId = this.gameScene.match.humanId;
+    const match = this.gameScene.match;
+    const meId = match.humanId;
+    const world = match.world;
     switch (e.type) {
       case 'countdown':
         sfx.countdown(e.n);
-        this.flashBig(e.n > 0 ? String(e.n) : t('go'));
+        this.countdown.show(e.n, e.n > 0 ? String(e.n) : t('go'));
         break;
       case 'arenaWarning':
         sfx.warning();
         break;
-      case 'roundEnd':
-        if (e.winnerId === meId) sfx.win();
-        else if (this.gameScene.match.human.alive) sfx.lose();
+      case 'coinPickup':
+        if (e.playerId === meId) {
+          const s = this.gameScene.worldToScreen(e.x, e.y, 30);
+          if (s.visible) this.coinFly.spawn(s.x, s.y, e.value);
+        }
         break;
-      case 'fall':
-        if (e.playerId === meId) this.time.delayedCall(250, () => sfx.lose());
-        this.addFeed(e.byId, e.playerId);
+      case 'fall': {
+        if (e.playerId === meId) this.time.delayedCall(1000, () => sfx.lose());
+        const victim = world.getPlayer(e.playerId);
+        const by = e.byId !== null ? world.getPlayer(e.byId) : undefined;
+        if (victim) {
+          this.feed.add(by, victim, meId);
+          if (e.byId === meId && meId >= 0) this.koToast(victim);
+        }
         break;
+      }
       case 'buy':
         if (e.playerId === meId) this.shopButtons.get(e.item)?.flash();
         break;
       case 'crown':
-        if (e.playerId === meId) this.flashBanner(t('crownYours'));
+        if (e.playerId === meId && meId >= 0) {
+          const { width } = this.scale;
+          showBanner(this, width / 2, this.bannerY(), width - 40, {
+            title: t('hud.leader'),
+            subtitle: t('hud.leaderSub'),
+            icon: 'crown',
+            color: 0xffb81f,
+          });
+        }
         break;
     }
   }
 
-  /** Кратко съобщение под таймера. */
-  private flashBanner(text: string): void {
-    const b = this.add.text(this.scale.width / 2, this.scale.height * 0.22, text, { ...TEXT_STYLE, fontSize: '30px', color: '#ffd23f' });
-    b.setOrigin(0.5).setScale(0.4);
-    this.tweens.add({ targets: b, scale: 1, duration: 260, ease: 'Back.easeOut' });
-    this.tweens.add({ targets: b, alpha: 0, y: b.y - 30, delay: 1400, duration: 400, onComplete: () => b.destroy() });
-  }
-
-  /** Лента с избутванията (горе вдясно): „Боби 💥 Мими“. */
-  private addFeed(byId: number | null, victimId: number): void {
-    const world = this.gameScene.match.world;
-    const meId = this.gameScene.match.humanId;
-    const victim = world.getPlayer(victimId);
-    if (!victim) return;
-    const by = byId !== null ? world.getPlayer(byId) : undefined;
-    const style = (id: number) => ({
-      ...TEXT_STYLE,
-      fontSize: '16px',
-      strokeThickness: 4,
-      color: id === meId ? '#ffd23f' : '#ffffff',
-    });
-    const parts: Phaser.GameObjects.GameObject[] = [];
-    const icon = this.add.image(0, 0, ATLAS, by ? 'boom' : 'skull').setScale(0.2);
-    const right = this.add.text(16, 0, victim.name, style(victim.id)).setOrigin(0, 0.5);
-    parts.push(icon, right);
-    if (by) parts.push(this.add.text(-16, 0, by.name, style(by.id)).setOrigin(1, 0.5));
-    const c = this.add.container(0, 0, parts);
-    this.feed.add(c);
-    this.feedItems.unshift({ c, age: 0 });
-    while (this.feedItems.length > 4) this.feedItems.pop()!.c.destroy();
-  }
-
-  private updateFeed(dtSec: number): void {
-    this.feedItems.forEach((it, i) => {
-      it.age += dtSec;
-      it.c.setPosition(0, i * 24);
-      it.c.setAlpha(it.age > 4 ? Math.max(0, 1 - (it.age - 4)) : 1);
-    });
-    for (let i = this.feedItems.length - 1; i >= 0; i--) {
-      if (this.feedItems[i]!.age > 5) this.feedItems.splice(i, 1)[0]!.c.destroy();
-    }
+  /** Малко съобщение при твое избутване: [лице] „Избута Мими!“. */
+  private koToast(victim: Player): void {
+    const { width, height } = this.scale;
+    const face = addFace(this, victim.skin, 40);
+    const txt = this.add
+      .text(0, 0, t('hud.knockedOut', { name: victim.name }), { ...TEXT_STYLE, fontSize: '22px', color: '#8ce99a', strokeThickness: 5 })
+      .setOrigin(0, 0.5);
+    const w = txt.width + 40 + 26;
+    face.setPosition(-w / 2 + 26, 0);
+    txt.setPosition(-w / 2 + 52, 0);
+    const bg = this.add.graphics();
+    bg.fillStyle(0x2a1650, 0.8);
+    bg.fillRoundedRect(-w / 2, -25, w + 6, 50, 25);
+    bg.lineStyle(3, 0x8ce99a, 1);
+    bg.strokeRoundedRect(-w / 2, -25, w + 6, 50, 25);
+    const c = this.add.container(width / 2, height * 0.7, [bg, face, txt]).setDepth(55).setScale(0.3).setAlpha(0);
+    this.tweens.add({ targets: c, scale: 1, alpha: 1, duration: 300, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: c, y: c.y - 50, alpha: 0, delay: 1300, duration: 400, ease: 'Cubic.easeIn', onComplete: () => c.destroy() });
   }
 
   /** Стрелка по ръба на екрана към короната, ако носителят не се вижда. */
@@ -415,12 +547,49 @@ export class HudScene extends Phaser.Scene {
     (this.crownArrow.list[0] as Phaser.GameObjects.Graphics).setRotation(ang);
   }
 
-  /** Голям изскачащ надпис в центъра (3, 2, 1, БУМ!). */
-  private flashBig(text: string): void {
-    this.bigText.setText(text).setAlpha(1).setScale(1.6);
-    this.tweens.killTweensOf(this.bigText);
-    this.tweens.add({ targets: this.bigText, scale: 1, duration: 250, ease: 'Back.easeOut' });
-    this.tweens.add({ targets: this.bigText, alpha: 0, delay: 550, duration: 300 });
+  /** Имената над героите на подиума: медал с мястото + име (твоето – в злато). */
+  private updatePodiumLabels(): void {
+    const podium = this.gameScene.podium;
+    if (!podium.showLabels) {
+      for (const l of this.podiumLabels) l.setVisible(false);
+      return;
+    }
+    const labels = podium.labels();
+    if (this.podiumLabels.length === 0) {
+      const meId = this.gameScene.match.humanId;
+      const narrow = this.scale.width < 600;
+      for (const l of labels) {
+        const name = this.add
+          .text(0, 0, l.name, {
+            ...TEXT_STYLE,
+            fontSize: narrow ? '15px' : '18px',
+            strokeThickness: 5,
+            color: l.playerId === meId ? '#ffd23f' : '#ffffff',
+          })
+          .setOrigin(0, 0.5);
+        const maxW = narrow ? 84 : 130;
+        if (name.width > maxW) name.setScale(maxW / name.width);
+        const w = name.displayWidth + 44;
+        const g = this.add.graphics();
+        g.fillStyle(0x2a1650, 0.85);
+        g.fillRoundedRect(-w / 2, -16, w, 32, 16);
+        g.lineStyle(3, MEDAL_COLORS[l.place - 1]!, 1);
+        g.strokeRoundedRect(-w / 2, -16, w, 32, 16);
+        g.fillStyle(MEDAL_COLORS[l.place - 1]!, 1);
+        g.fillCircle(-w / 2 + 16, 0, 12);
+        const num = this.add.text(-w / 2 + 16, 1, String(l.place), { ...TEXT_STYLE, fontSize: '16px', strokeThickness: 4 }).setOrigin(0.5);
+        name.setPosition(-w / 2 + 34, 0);
+        const c = this.add.container(0, 0, [g, num, name]).setDepth(40).setScale(0.2);
+        this.tweens.add({ targets: c, scale: 1, duration: 360, delay: (3 - l.place) * 90, ease: 'Back.easeOut' });
+        this.podiumLabels.push(c);
+      }
+    }
+    labels.forEach((l, i) => {
+      const c = this.podiumLabels[i];
+      if (!c) return;
+      const s = this.gameScene.worldToScreen(l.x, l.z, l.y);
+      c.setVisible(s.visible).setPosition(s.x, s.y - 18);
+    });
   }
 
   private onPrimaryKey(): void {
@@ -557,143 +726,51 @@ export class HudScene extends Phaser.Scene {
     if (resetKind) this.panelKind = null;
   }
 
-  private makePanelBg(w: number, h: number): Phaser.GameObjects.Graphics {
-    const g = this.add.graphics();
-    g.fillStyle(0x000000, 0.35);
-    g.fillRoundedRect(-w / 2 + 6, -h / 2 + 10, w, h, 28);
-    g.fillStyle(0x2a1650, 0.94);
-    g.fillRoundedRect(-w / 2, -h / 2, w, h, 28);
-    g.lineStyle(4, 0xffd23f, 1);
-    g.strokeRoundedRect(-w / 2, -h / 2, w, h, 28);
-    return g;
-  }
-
   /** Панел след падане: кой те избута, кое място си, „Нова игра“ или „Гледай“. */
   private showEliminated(): void {
     this.closePanel();
     const match = this.gameScene.match;
-    const world = match.world;
-    const me = match.human;
-    const by = me.lastHitBy >= 0 ? world.getPlayer(me.lastHitBy) : undefined;
-    const pushed = by && (me.eliminatedTick - me.lastHitTick) * world.dt <= world.cfg.hit.creditWindow;
-    const w = Math.min(460, this.scale.width - 32);
-    const h = 300;
-
-    const items: Phaser.GameObjects.GameObject[] = [this.makePanelBg(w, h)];
-    items.push(this.add.text(0, -105, t('youFell'), { ...TEXT_STYLE, fontSize: '48px', color: '#ff8fa3' }).setOrigin(0.5));
-    items.push(
-      this.add
-        .text(0, -50, pushed ? t('pushedBy', { name: by!.name }) : t('fellAlone'), { ...TEXT_STYLE, fontSize: '22px' })
-        .setOrigin(0.5),
-    );
-    items.push(
-      this.add
-        .text(0, -12, t('yourPlace', { n: placeOf(world, me.id), total: world.players.length }), {
-          ...TEXT_STYLE,
-          fontSize: '22px',
-          color: '#ffd23f',
-        })
-        .setOrigin(0.5),
-    );
-    const btnW = Math.min(190, (w - 60) / 2);
-    // Онлайн рундът продължава без теб – вместо „Нова игра“ има „Меню“ (излиза от стаята).
-    const again = match.online
-      ? new Button(this, t('menu'), () => this.gameScene.goToMenu(), { width: btnW, color: 0x6b5a8e, fontSize: 24 })
-      : new Button(this, t('playAgain'), () => this.gameScene.restartRound(), { width: btnW, fontSize: 24 });
-    again.container.setPosition(-btnW / 2 - 10, 75);
-    const watch = new Button(this, t('spectate'), () => this.closePanel(), { width: btnW, color: 0x4dabf7, fontSize: 24 });
-    watch.container.setPosition(btnW / 2 + 10, 75);
-    items.push(again.container, watch.container);
-
-    this.openPanel(items, 'eliminated');
+    const panel = buildEliminatedPanel(this, {
+      world: match.world,
+      me: match.human,
+      online: match.online,
+      width: this.scale.width,
+      onAgain: () => this.gameScene.restartRound(),
+      onMenu: () => this.gameScene.goToMenu(),
+      onSpectate: () => this.closePanel(),
+    });
+    panel.setPosition(this.scale.width / 2, this.eliminatedY());
+    this.panel = panel;
+    this.panelKind = 'eliminated';
+    panel.setScale(0.6).setAlpha(0);
+    this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: 300, ease: 'Back.easeOut' });
   }
 
-  /** Финален панел: победител и класиране. */
-  private showResults(): void {
+  /**
+   * Класирането в края: карта отстрани (широк екран) или лист отдолу (телефон),
+   * за да се вижда подиумът. animate=false – при смяна на размера/езика.
+   */
+  private showResults(animate: boolean): void {
     this.closePanel();
     const match = this.gameScene.match;
-    const world = match.world;
-    const meId = match.humanId;
-    const winner = world.getPlayer(world.round.winnerId);
-    const all = standings(world);
-    const rowH = 34;
-    // Колко реда се събират на екрана (телефон в хоризонтален режим е нисък).
-    // Онлайн долу има още ред: „Следващ рунд след N…“ над бутона „Меню“.
-    const extraH = match.online ? 36 : 0;
-    const maxRows = Math.max(3, Math.min(8, Math.floor((this.scale.height - 32 - 230 - extraH) / rowH)));
-    // Топ N; ако те няма в тях – последният ред е твоят (с истинското ти място).
-    const rows = all.slice(0, maxRows).map((p, i) => ({ p, place: i + 1 }));
-    const myPlace = all.findIndex((p) => p.id === meId) + 1;
-    if (myPlace > maxRows) rows[rows.length - 1] = { p: all[myPlace - 1]!, place: myPlace };
-    const w = Math.min(500, this.scale.width - 32);
-    const h = Math.min(this.scale.height - 32, 230 + extraH + rows.length * rowH);
-
-    const items: Phaser.GameObjects.GameObject[] = [this.makePanelBg(w, h)];
-    let y = -h / 2 + 46;
-    const iWon = winner?.id === meId;
-    items.push(
-      this.add
-        .text(0, y, iWon ? t('victory') : t('winnerIs', { name: winner?.name ?? '—' }), {
-          ...TEXT_STYLE,
-          fontSize: iWon ? '52px' : '36px',
-          color: '#ffd23f',
-        })
-        .setOrigin(0.5),
-    );
-    y += 44;
-    const reason = world.round.endReason === 'timeUp' ? t('reasonTimeUp') : t('reasonLastStanding');
-    items.push(this.add.text(0, y, reason, { ...TEXT_STYLE, fontSize: '18px', strokeThickness: 4 }).setOrigin(0.5));
-    y += 40;
-
-    rows.forEach(({ p, place }) => {
-      const isMe = p.id === meId;
-      const color = isMe ? '#ffd23f' : '#ffffff';
-      const style = { ...TEXT_STYLE, fontSize: '22px', color, strokeThickness: 4 };
-      items.push(this.add.text(-w / 2 + 30, y, `${place}.`, style).setOrigin(0, 0.5));
-      items.push(this.add.text(-w / 2 + 70, y, p.name, style).setOrigin(0, 0.5));
-      items.push(this.add.image(w / 2 - 150, y, ATLAS, 'boom').setScale(0.22));
-      items.push(this.add.text(w / 2 - 132, y, String(p.knockouts), style).setOrigin(0, 0.5));
-      items.push(this.add.image(w / 2 - 80, y, ATLAS, 'coin').setScale(0.22));
-      items.push(this.add.text(w / 2 - 62, y, String(p.coins), style).setOrigin(0, 0.5));
-      y += rowH;
-    });
-
-    const menu = new Button(this, t('menu'), () => this.gameScene.goToMenu(), { width: 150, color: 0x6b5a8e });
-    if (match.online) {
-      // Онлайн следващият рунд започва сам – брояч вместо „Пак!“.
-      this.nextRoundText = this.add
-        .text(0, h / 2 - 102, '', { ...TEXT_STYLE, fontSize: '20px', color: '#ffd23f', strokeThickness: 5 })
-        .setOrigin(0.5);
-      menu.container.setPosition(0, h / 2 - 50);
-      items.push(this.nextRoundText, menu.container);
-      this.updateNetUi();
-    } else {
-      const again = new Button(this, t('again'), () => this.gameScene.restartRound(), { width: 190 });
-      again.container.setPosition(-w / 4 + 10, h / 2 - 50);
-      menu.container.setPosition(w / 4 + 10, h / 2 - 50);
-      items.push(again.container, menu.container);
-    }
-
-    const lang = new Button(
-      this,
-      t('langToggle'),
-      () => {
+    const res = buildResultsPanel(this, {
+      world: match.world,
+      meId: match.humanId,
+      online: match.online,
+      width: this.scale.width,
+      height: this.scale.height,
+      onAgain: () => this.gameScene.restartRound(),
+      onMenu: () => this.gameScene.goToMenu(),
+      onLang: () => {
         toggleLang();
-        this.showResults();
+        this.showResults(false);
       },
-      { width: 64, height: 40, fontSize: 18, color: 0x6b5a8e },
-    );
-    lang.container.setPosition(w / 2 - 44, -h / 2 + 34);
-    items.push(lang.container);
-
-    this.openPanel(items, 'results');
-  }
-
-  private openPanel(items: Phaser.GameObjects.GameObject[], kind: 'eliminated' | 'results'): void {
-    this.panel = this.add.container(this.scale.width / 2, this.scale.height / 2, items);
-    this.panelKind = kind;
-    this.panel.setScale(0.6).setAlpha(0);
-    this.tweens.add({ targets: this.panel, scale: 1, alpha: 1, duration: 260, ease: 'Back.easeOut' });
+    });
+    this.panel = res.container;
+    this.panelKind = 'results';
+    this.nextRoundText = res.nextRoundText;
+    if (match.online) this.updateNetUi();
+    res.enter(animate);
   }
 }
 
